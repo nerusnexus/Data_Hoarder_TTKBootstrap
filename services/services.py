@@ -6,17 +6,20 @@ from services.subservices.addgroup_service import AddGroupService
 from services.subservices.addchannel_service import AddChannelService
 from services.db.database_initializer import initialize_database
 
+
 class AppServices:
     def __init__(self, style, data_folder: Path):
         self.style = style
         self.data_folder = data_folder
         self.db_path = self.data_folder / "database.db"
 
-        # 🔥 Initialize DB once
+        # Initialize DB once and apply the unified schema
         initialize_database(self.db_path)
 
         self.settings = SettingsService(data_folder)
-        self.ytdlp = YtDlpService(data_folder)
+
+        # Inject the database path directly so yt-dlp doesn't create its own DB
+        self.ytdlp = YtDlpService(self.db_path)
         self.account = AccountService(data_folder)
 
         self.add_group = AddGroupService(self.db_path)
