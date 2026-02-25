@@ -77,22 +77,18 @@ class YtDlpService:
         conn.commit()
         conn.close()
 
-    def fetch_channel_public_info(self, channel_input: str):
-        import yt_dlp
+    def fetch_channel_metadata(self, channel_input: str) -> dict:
+        channel_input = channel_input.strip()
 
+        # Options matching: yt-dlp -J --flat-playlist
         ydl_opts = {
             "quiet": True,
             "skip_download": True,
-            "extract_flat": True
+            "extract_flat": True,
         }
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        with YoutubeDL(ydl_opts) as ydl:
+            # Returns the full metadata dictionary
             info = ydl.extract_info(channel_input, download=False)
 
-        return {
-            "title": info.get("title"),
-            "channel_id": info.get("channel_id"),
-            "subscriber_count": info.get("channel_follower_count")
-                or info.get("subscriber_count"),
-            "video_count": info.get("playlist_count")
-        }
+        return info

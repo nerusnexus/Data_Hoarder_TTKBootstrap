@@ -12,18 +12,20 @@ class AppServices:
         self.style = style
         self.data_folder = data_folder
         self.db_path = self.data_folder / "database.db"
+        # Define the metadata folder path
+        self.metadata_folder = self.data_folder / "Metadata"
 
-        # Initialize DB once and apply the unified schema
+        # Ensure necessary folders exist
+        self.metadata_folder.mkdir(parents=True, exist_ok=True)
         initialize_database(self.db_path)
 
         self.settings = SettingsService(data_folder)
-
-        # Inject the database path directly so yt-dlp doesn't create its own DB
         self.ytdlp = YtDlpService(self.db_path)
         self.account = AccountService(data_folder)
 
         self.add_group = AddGroupService(self.db_path)
-        self.add_channel = AddChannelService(self.db_path)
+        # Inject the metadata folder and ytdlp service
+        self.add_channel = AddChannelService(self.db_path, self.metadata_folder, self.ytdlp)
 
     def get_available_themes(self):
         return self.style.theme_names()
