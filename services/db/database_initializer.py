@@ -1,7 +1,6 @@
 import sqlite3
 from pathlib import Path
 
-
 def initialize_database(db_path: Path):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -14,7 +13,7 @@ def initialize_database(db_path: Path):
         )
     """)
 
-    # Expanded channels table for the "pseudo-library" index
+    # Expanded channels table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS channels (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -33,7 +32,7 @@ def initialize_database(db_path: Path):
         )
     """)
 
-    # Video metadata table (UPDATED to include video_type and upload_date)
+    # Video metadata table (now includes duration, description, tags, etc.)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS videos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,22 +45,15 @@ def initialize_database(db_path: Path):
             is_downloaded INTEGER DEFAULT 0,
             video_type TEXT,
             upload_date TEXT,
+            duration INTEGER,
+            description TEXT,
+            tags TEXT,
+            like_count INTEGER,
+            comment_count INTEGER,
+            filepath TEXT,
             FOREIGN KEY(channel_name) REFERENCES channels(name) ON DELETE CASCADE
         )
     """)
-
-    # --- MIGRATION: Safely update existing databases ---
-    cursor.execute("PRAGMA table_info(videos)")
-    columns = [info[1] for info in cursor.fetchall()]
-
-    if "video_type" not in columns:
-        print("Migrating DB: Adding 'video_type' column...")
-        cursor.execute("ALTER TABLE videos ADD COLUMN video_type TEXT")
-
-    if "upload_date" not in columns:
-        print("Migrating DB: Adding 'upload_date' column...")
-        cursor.execute("ALTER TABLE videos ADD COLUMN upload_date TEXT")
-    # ---------------------------------------------------
 
     conn.commit()
     conn.close()
