@@ -105,6 +105,26 @@ class AddChannelService:
         conn.close()
         return [c[0] for c in channels]
 
+    def get_channel_details(self, channel_name: str):
+        """Fetches full channel details to find the metadata folder."""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM channels WHERE name = ?", (channel_name,))
+        row = cursor.fetchone()
+        conn.close()
+        return dict(row) if row else None
+
+    def get_videos_by_channel(self, channel_name: str):
+        """Fetches all indexed videos for a specific channel."""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM videos WHERE channel_name = ?", (channel_name,))
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+
     def delete_channel(self, channel_name: str):
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
