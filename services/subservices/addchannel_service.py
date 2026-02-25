@@ -1,133 +1,129 @@
 import json
 import sqlite3
-import re
+import yt_dlp
 from pathlib import Path
 
-
 class AddChannelService:
-    def __init__(self, db_path: Path, metadata_path: Path, ytdlp_service):
+    # 1. Fixed the __init__ to accept the 3 arguments your services.py is sending
+    def __init__(self, db_path, metadata_folder, ytdlp=None):
         self.db_path = db_path
-        self.metadata_path = metadata_path
-        self.ytdlp = ytdlp_service
+        self.metadata_folder = Path(metadata_folder)
+        self.ytdlp = ytdlp
 
-    def _extract_all_videos(self, entries):
-        """Función auxiliar para encontrar videos en estructuras anidadas."""
-        videos = []
-        for entry in entries:
-            if not entry:
-                continue
-            # Si es un video (tipo 'url'), lo añadimos
-            if entry.get("_type") == "url":
-                videos.append(entry)
-            # Si es una sub-lista (como 'Videos' o 'Shorts'), buscamos dentro
-            elif "entries" in entry:
-                videos.extend(self._extract_all_videos(entry["entries"]))
-        return videos
-
-    def add_channel(self, group_name: str, url: str):
-        if not url:
-            raise ValueError("La URL no puede estar vacía")
-
-        # 1. Obtener metadatos completos
-        meta = self.ytdlp.fetch_channel_metadata(url)
-
-        # 2. Extraer identificadores según tu nueva convención
-        channel_id = meta.get("channel_id") or meta.get("id")
-        handle = meta.get("uploader_id") or meta.get("id")
-        title = meta.get("title") or meta.get("channel") or "Unknown"
-
-        # Nombre del archivo: channel_id (@handle).json
-        filename_base = f"{channel_id} ({handle})" if handle and handle != channel_id else channel_id
-        safe_filename = re.sub(r'[\\/*?:"<>|]', "", filename_base)
-
-        # 3. Guardar el JSON maestro en Data/Metadata/
-        json_file = self.metadata_path / f"{safe_filename}.json"
-        with open(json_file, 'w', encoding='utf-8') as f:
-            json.dump(meta, f, indent=4, ensure_ascii=False)
-
-        # 4. Poblar la base de datos
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        try:
-            # Insertar o actualizar metadatos del canal
-            cursor.execute(
-                """INSERT OR REPLACE INTO channels (
-                    group_name, name, handle, channel_id, url, 
-                    title, follower_count, description, tags, thumbnails
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    group_name,
-                    title,
-                    handle,
-                    channel_id,
-                    url,
-                    title,
-                    meta.get("channel_follower_count"),
-                    meta.get("description"),
-                    json.dumps(meta.get("tags", [])),
-                    json.dumps(meta.get("thumbnails", []))
-                )
-            )
-
-            # 5. Extraer y guardar todos los videos reales (aplanando la estructura)
-            all_videos = self._extract_all_videos(meta.get("entries", []))
-
-            for video in all_videos:
-                cursor.execute(
-                    """INSERT OR IGNORE INTO videos (
-                        channel_name, video_id, title, url, view_count, thumbnails
-                    ) VALUES (?, ?, ?, ?, ?, ?)""",
-                    (
-                        title,
-                        video.get("id"),
-                        video.get("title"),
-                        video.get("url"),
-                        video.get("view_count"),
-                        json.dumps(video.get("thumbnails", []))
-                    )
-                )
-
-            conn.commit()
-        except sqlite3.Error as e:
-            conn.rollback()
-            raise Exception(f"Error de base de datos: {e}")
-        finally:
-            conn.close()
-
-        return title
-
-    def get_channels_by_group(self, group_name: str):
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute("SELECT name FROM channels WHERE group_name = ?", (group_name,))
-        channels = cursor.fetchall()
-        conn.close()
-        return [c[0] for c in channels]
-
-    def get_channel_details(self, channel_name: str):
-        """Fetches full channel details to find the metadata folder."""
+    def get_connection(self):
+        # This allows us to return rows as dictionaries, which your UI expects
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM channels WHERE name = ?", (channel_name,))
-        row = cursor.fetchone()
-        conn.close()
-        return dict(row) if row else None
+        return conn
 
-    def get_videos_by_channel(self, channel_name: str):
-        """Fetches all indexed videos for a specific channel."""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM videos WHERE channel_name = ?", (channel_name,))
-        rows = cursor.fetchall()
-        conn.close()
-        return [dict(r) for r in rows]
+    def get_all_groups(self):
+        with self.get_connection() as conn:
+            return [row["name"] for row in conn.execute("SELECT name FROM groups").fetchall()]
 
-    def delete_channel(self, channel_name: str):
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM channels WHERE name = ?", (channel_name,))
-        conn.commit()
-        conn.close()
+    def get_channels_by_group(self, group):
+        with self.get_connection() as conn:
+            return [row["name"] for row in conn.execute("SELECT name FROM channels WHERE group_name = ?", (group,)).fetchall()]
+
+    def get_channel_details(self, name):
+        with self.get_connection() as conn:
+            row = conn.execute("SELECT * FROM channels WHERE name = ?", (name,)).fetchone()
+            return dict(row) if row else None
+
+    def get_videos_by_channel(self, name):
+        with self.get_connection() as conn:
+            # Matches your schema: your videos table links to channels via 'channel_name'
+            rows = conn.execute("SELECT * FROM videos WHERE channel_name = ?", (name,)).fetchall()
+            return [dict(row) for row in rows]
+
+    def fetch_channel_info(self, url, group, progress_callback=None):
+        ydl_opts = {
+            'quiet': True,
+            'extract_flat': True,  # Don't download videos, just metadata
+            'dump_single_json': True,
+        }
+
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            try:
+                if progress_callback: progress_callback("Fetching channel metadata...")
+                info = ydl.extract_info(url, download=False)
+
+                # CORREÇÃO 1: Fallbacks mais robustos para evitar que fique None
+                channel_name = info.get("uploader") or info.get("channel") or info.get("title") or "Unknown_Channel"
+                channel_id = info.get("id") or "Unknown_ID"
+                handle = info.get("uploader_id") or channel_id
+
+                with self.get_connection() as conn:
+                    cursor = conn.cursor()
+
+                    # 1. Save Channel Info (Update if it exists, insert if it doesn't)
+                    cursor.execute("SELECT id FROM channels WHERE group_name = ? AND name = ?", (group, channel_name))
+                    if cursor.fetchone():
+                        cursor.execute("""
+                            UPDATE channels SET handle=?, channel_id=?, url=?, title=?
+                            WHERE group_name=? AND name=?
+                        """, (handle, channel_id, info.get("uploader_url") or url, info.get("title"), group, channel_name))
+                    else:
+                        cursor.execute("""
+                            INSERT INTO channels (group_name, name, handle, channel_id, url, title)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        """, (group, channel_name, handle, channel_id, info.get("uploader_url") or url, info.get("title")))
+
+                    # 2. Process Videos
+                    if "entries" in info:
+                        total = len(info["entries"])
+                        for i, entry in enumerate(info["entries"]):
+                            if not entry: continue
+
+                            # --- DETECT VIDEO TYPE ---
+                            url_chk = entry.get("url", "") or entry.get("original_url", "") or entry.get("webpage_url", "")
+                            live_status = entry.get("live_status")
+                            duration = entry.get("duration", 9999)
+
+                            if live_status in ["is_live", "was_live", "is_upcoming"]:
+                                v_type = "Lives"
+                            elif "/shorts/" in url_chk or (duration and duration <= 61):
+                                v_type = "Shorts"
+                            else:
+                                v_type = "Videos"
+
+                            # Prevenindo IDs vazios para os vídeos
+                            video_id = entry.get("id") or f"unknown_{i}"
+                            title = entry.get("title") or "Unknown Title"
+                            view_count = entry.get("view_count") or 0
+                            upload_date = entry.get("upload_date") or "00000000"
+
+                            # Insert or Update the video to avoid duplicates
+                            cursor.execute("SELECT id FROM videos WHERE video_id = ? AND channel_name = ?", (video_id, channel_name))
+                            if cursor.fetchone():
+                                cursor.execute("""
+                                    UPDATE videos SET title=?, url=?, view_count=?, video_type=?, upload_date=?
+                                    WHERE video_id=? AND channel_name=?
+                                """, (title, url_chk, view_count, v_type, upload_date, video_id, channel_name))
+                            else:
+                                cursor.execute("""
+                                    INSERT INTO videos (channel_name, video_id, title, url, view_count, is_downloaded, video_type, upload_date)
+                                    VALUES (?, ?, ?, ?, ?, 0, ?, ?)
+                                """, (channel_name, video_id, title, url_chk, view_count, v_type, upload_date))
+
+                            if progress_callback and i % 10 == 0:
+                                progress_callback(f"Processing video {i}/{total}...")
+
+                    conn.commit()
+
+                # 3. Save JSON to disk (Optional, for backup)
+                folder_name = f"{channel_id} ({handle})" if handle and handle != channel_id else channel_id
+                save_path = self.metadata_folder / folder_name / "channel_info.json"
+                save_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(save_path, "w", encoding="utf-8") as f:
+                    json.dump(info, f, indent=4)
+
+                return True, f"Successfully added {channel_name}"
+
+
+            except Exception as e:
+                import traceback
+                erro_completo = traceback.format_exc()
+                print("ERRO DETALHADO:")
+                print(erro_completo)
+                # Retorna a string gigantesca para forçar a caixa de aviso a mostrar tudo
+                return False, f"ERRO FATAL:\n{erro_completo}"
