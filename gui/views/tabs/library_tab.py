@@ -86,7 +86,8 @@ class LibraryTab(ttk.Frame):
         groups = self.add_group_service.get_all_groups()
         for group in groups:
             group_id = self.tree.insert("", "end", text=group, tags=("group",), open=True)
-            channels = self.add_group_service.get_channels_by_group(group)
+            # Use add_channel_service because it owns the channel database logic
+            channels = self.add_channel_service.get_channels_by_group(group)
             for channel in channels:
                 self.tree.insert(group_id, "end", text=channel, tags=("channel",))
 

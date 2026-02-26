@@ -4,12 +4,15 @@ import threading
 
 
 class MyAccountTab(ttk.Frame):
-    def __init__(self, parent, services):
+    def __init__(self, parent, account_service, ytdlp_service): # <-- New way
         super().__init__(parent)
 
-        self.services = services
-        self.account = services.account
-        self.ytdlp = services.ytdlp
+        # Store the injected services directly
+        self.account = account_service
+        self.ytdlp = ytdlp_service
+
+        self.subs_label = None
+        self.url_entry = None
 
         self.subs_label = None
         self.url_entry = None
@@ -130,10 +133,12 @@ class MyAccountTab(ttk.Frame):
             return
 
         def update_ui():
+            # SAVE DATA ON MAIN THREAD
             self.account.update_field("channel_id", meta.get("channel_id"))
             self.account.update_field("subscribers", meta.get("subscriber_count"))
             self.account.update_field("video_count", meta.get("video_count"))
 
+            # REFRESH UI
             self.update_stats_labels()
             Messagebox.show_info("Success", "Channel info fetched.")
 

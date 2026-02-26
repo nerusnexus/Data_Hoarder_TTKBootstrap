@@ -32,7 +32,11 @@ class AccountService:
             warnings.warn(f"Failed to load settings from {self.account_file}: {e}", RuntimeWarning)
 
     def save(self):
-        self.account_file.write_text(json.dumps(self.data, indent=4))
+        try:
+            json_data = json.dumps(self.data, indent=4)
+            self.account_file.write_text(json_data)
+        except Exception as e:
+            warnings.warn(f"Failed to save account data to {self.account_file}: {e}", RuntimeWarning)
 
     def update_field(self, key, value):
         self.data[key] = value

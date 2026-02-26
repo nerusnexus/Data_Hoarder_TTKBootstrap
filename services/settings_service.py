@@ -34,7 +34,11 @@ class SettingsService:
             warnings.warn(f"Failed to load settings from {self.config_file}: {e}", RuntimeWarning)
 
     def save(self):
-        self.config_file.write_text(json.dumps(self.data, indent=4))
+        try:
+            json_data = json.dumps(self.data, indent=4)
+            self.config_file.write_text(json_data)
+        except Exception as e:
+            warnings.warn(f"Failed to save settings to {self.config_file}: {e}", RuntimeWarning)
 
     # --- getters ---
     def get_theme(self):
