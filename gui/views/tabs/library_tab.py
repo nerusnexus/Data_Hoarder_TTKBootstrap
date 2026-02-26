@@ -1,6 +1,6 @@
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
-from ttkbootstrap.scrolled import ScrolledFrame
+from ttkbootstrap.widgets.scrolled import ScrolledFrame
 from ttkbootstrap.dialogs import Messagebox
 from pathlib import Path
 from PIL import Image, ImageTk
@@ -8,6 +8,7 @@ import webbrowser
 import os
 import sys
 import subprocess
+from config import METADATA_DIR
 
 
 class LibraryTab(ttk.Frame):
@@ -26,6 +27,7 @@ class LibraryTab(ttk.Frame):
         self.sort_order_var = ttk.StringVar(value="Descending")
         self.image_queue = []
         self.is_loading_images = False
+        self.current_thumb_dir = None
 
         self.build_ui()
         self.load_tree_data()
@@ -87,7 +89,7 @@ class LibraryTab(ttk.Frame):
             for channel in channels:
                 self.tree.insert(group_id, "end", text=channel, tags=("channel",))
 
-    def on_channel_selected(self, event):
+    def on_channel_selected(self, _event):
         selected = self.tree.selection()
         if not selected: return
         item = self.tree.item(selected[0])
@@ -102,16 +104,16 @@ class LibraryTab(ttk.Frame):
         cid = channel_info.get("channel_id")
         handle = channel_info.get("handle")
         folder_name = f"{cid} ({handle})" if handle and handle != cid else cid
-        self.current_thumb_dir = self.services.metadata_folder / folder_name / "Videos"
+        self.current_thumb_dir = METADATA_DIR / folder_name / "Videos"
 
         self.apply_filters_and_render()
 
-    def on_search_typing(self, event=None):
+    def on_search_typing(self, _event=None):
         if self._search_timer is not None:
             self.after_cancel(self._search_timer)
-        self._search_timer = self.after(1000, self.apply_filters_and_render)
+        self._search_timer = self.after(1000, lambda: self.apply_filters_and_render())  # type: ignore
 
-    def on_sort_changed(self, event=None):
+    def on_sort_changed(self, _event=None):
         if self.current_videos:
             self.apply_filters_and_render()
 
@@ -206,7 +208,8 @@ class LibraryTab(ttk.Frame):
             command=lambda p=filepath_str: self.play_video(p)
         ).pack(side=LEFT, padx=5)
 
-    def open_local_path(self, path):
+    @staticmethod
+    def open_local_path(path):
         if not path or not path.exists():
             Messagebox.show_warning("Not Found", "Folder does not exist yet. You might need to download files first.")
             return
@@ -248,7 +251,7 @@ class LibraryTab(ttk.Frame):
                 photo = ImageTk.PhotoImage(img)
                 label.config(image=photo, text="")
                 label.image = photo
-        except:
-            pass
+        except Exception as e: # Silently log thumbnail errors instead of crashing the UI loop
+            print(f"Failed to load thumbnail from {path}: {e}")
 
-        self.after(5, self.process_image_queue)
+        self.after(5, self.process_image_queue)  # type: ignore

@@ -1,5 +1,5 @@
 import pystray
-from pystray import MenuItem as item
+from pystray import MenuItem as Item
 from pystray import Menu
 from PIL import Image
 import threading
@@ -15,8 +15,8 @@ class TrayManager:
 
         # Properly wrap the items inside a pystray Menu instance
         menu = Menu(
-            item("Open", self.show_window),
-            item("Quit", self.quit_app)
+            Item("Open", self.show_window),
+            Item("Quit", self.quit_app)
         )
 
         self.icon = pystray.Icon("DataHoarder", image, "Data Hoarder", menu)

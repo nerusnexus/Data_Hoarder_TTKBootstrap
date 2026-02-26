@@ -1,94 +1,40 @@
-from pathlib import Path
-import sqlite3
-import threading
+import typing
 from yt_dlp import YoutubeDL
 
 
 class YtDlpService:
-    def __init__(self, db_path: Path):
-        # Store the unified database path directly
-        self.db_path = db_path
+    def __init__(self):
+        pass
 
-    # ---------- Groups ----------
-
-    def add_group(self, name: str):
-        conn = sqlite3.connect(self.db_path)
-        cur = conn.cursor()
-        cur.execute("INSERT INTO groups (name) VALUES (?)", (name,))
-        conn.commit()
-        conn.close()
-
-    def delete_group(self, name: str):
-        conn = sqlite3.connect(self.db_path)
-        cur = conn.cursor()
-        cur.execute("DELETE FROM groups WHERE name=?", (name,))
-        conn.commit()
-        conn.close()
-
-    # ---------- Channels ----------
-
-    def fetch_channel_metadata(self, channel_input: str) -> dict:
+    @staticmethod
+    def fetch_channel_public_info(channel_input: str) -> dict:
+        """Fetches flat metadata for a channel to be used in the My Account tab."""
         channel_input = channel_input.strip()
 
         if not channel_input.startswith("http"):
             channel_input = channel_input.lstrip("@")
             channel_input = f"https://www.youtube.com/@{channel_input}"
 
-        opts = {
+        # Explicitly declare this as a dictionary that accepts Any value type
+        opts: dict[str, typing.Any] = {
             "quiet": True,
             "skip_download": True,
             "extract_flat": True,
         }
 
-        with YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(channel_input, download=False)
+        # Tell the IDE to ignore the strict _Params requirement
+        with YoutubeDL(opts) as ydl:  # type: ignore
+            raw_info = ydl.extract_info(channel_input, download=False)
+
+            # Convert the strict TypedDict to a normal dictionary to bypass missing key warnings
+            info = dict(raw_info) if raw_info else {}
 
         return {
             "url": channel_input,
             "title": info.get("title"),
             "uploader_id": info.get("uploader_id"),
             "handle": info.get("uploader_id") or info.get("id"),
+            "channel_id": info.get("channel_id"),
+            "subscriber_count": info.get("subscriber_count", "Hidden"),
+            "video_count": info.get("video_count", "Unknown")
         }
-
-    def add_channel(self, group_name: str, meta: dict):
-        conn = sqlite3.connect(self.db_path)
-        cur = conn.cursor()
-
-        # Insert channel using the new unified schema logic
-        cur.execute("""
-            INSERT INTO channels (group_name, name, handle, url, title, uploader_id)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (
-            group_name,
-            meta.get("title") or meta.get("handle"),
-            meta.get("handle"),
-            meta.get("url"),
-            meta.get("title"),
-            meta.get("uploader_id"),
-        ))
-
-        conn.commit()
-        conn.close()
-
-    def delete_channel(self, handle: str):
-        conn = sqlite3.connect(self.db_path)
-        cur = conn.cursor()
-        cur.execute("DELETE FROM channels WHERE handle=?", (handle,))
-        conn.commit()
-        conn.close()
-
-    def fetch_channel_metadata(self, channel_input: str) -> dict:
-        channel_input = channel_input.strip()
-
-        # Options matching: yt-dlp -J --flat-playlist
-        ydl_opts = {
-            "quiet": True,
-            "skip_download": True,
-            "extract_flat": True,
-        }
-
-        with YoutubeDL(ydl_opts) as ydl:
-            # Returns the full metadata dictionary
-            info = ydl.extract_info(channel_input, download=False)
-
-        return info

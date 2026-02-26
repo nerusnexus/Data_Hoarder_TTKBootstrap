@@ -51,12 +51,18 @@ class AddGroupDialog(ttk.Toplevel):
     def submit(self):
         name = self.entry.get().strip()
 
+        if not name:
+            Messagebox.show_warning("Input Required", "Please enter a valid group name.", parent=self)
+            return
+
         try:
             result = self.service.add_group(name)
             self.result = result
             self.destroy()
+        except ValueError as ve:
+            Messagebox.show_warning("Duplicate Entry", str(ve), parent=self)
         except Exception as e:
-            Messagebox.show_error("Error", str(e))
+            Messagebox.show_error(f"An unexpected system error occurred:\n{e}", "Database Error", parent=self)
 
     def center_window(self):
         self.update_idletasks()

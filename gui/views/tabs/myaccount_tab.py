@@ -11,6 +11,12 @@ class MyAccountTab(ttk.Frame):
         self.account = services.account
         self.ytdlp = services.ytdlp
 
+        self.subs_label = None
+        self.url_entry = None
+        self.videos_label = None
+        self.sub_tree = None
+        self.handle_entry = None
+
         self.build_ui()
 
     # ---------------- UI ----------------
@@ -120,7 +126,7 @@ class MyAccountTab(ttk.Frame):
         try:
             meta = self.ytdlp.fetch_channel_public_info(channel_input)
         except Exception as e:
-            self.after(0, lambda: Messagebox.show_error("Error", str(e)))
+            self.after(0, lambda: Messagebox.show_error("Error", str(e)))  # type: ignore
             return
 
         def update_ui():
@@ -131,4 +137,4 @@ class MyAccountTab(ttk.Frame):
             self.update_stats_labels()
             Messagebox.show_info("Success", "Channel info fetched.")
 
-        self.after(0, update_ui)
+        self.after(0, update_ui)  # type: ignore

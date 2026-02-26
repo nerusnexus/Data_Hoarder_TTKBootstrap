@@ -1,8 +1,8 @@
 import sqlite3
-from pathlib import Path
+from config import DB_PATH
 
-def initialize_database(db_path: Path):
-    conn = sqlite3.connect(db_path)
+def initialize_database():
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     # Create the groups table

@@ -1,25 +1,14 @@
-from pathlib import Path
 from ttkbootstrap import Style
 from gui.ui import MainUI
 from services.services import AppServices
 from gui.tray import TrayManager
 
 
-def get_app_dir() -> Path:
-    return Path(__file__).resolve().parent
-
-
-def ensure_data_folder() -> Path:
-    data_dir = get_app_dir() / "Data"
-    data_dir.mkdir(parents=True, exist_ok=True)
-    return data_dir
-
-
 def main():
-    data_folder = ensure_data_folder()
-
     style = Style()
-    services = AppServices(style, data_folder)
+
+    # We no longer need to pass 'data_folder' here!
+    services = AppServices(style)
 
     style.theme_use(services.settings.get_theme())
 

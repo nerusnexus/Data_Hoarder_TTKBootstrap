@@ -1,31 +1,29 @@
 import sqlite3
-from pathlib import Path
-
+from services.db.db_manager import DatabaseManager
 
 class AddGroupService:
-    def __init__(self, db_path: Path):
-        self.db_path = db_path
-
-    def add_group(self, name: str):
+    @staticmethod
+    def add_group(name: str):
         if not name:
             raise ValueError("Group name cannot be empty")
 
-        conn = sqlite3.connect(self.db_path)
+        conn = DatabaseManager.get_connection()
         cursor = conn.cursor()
 
         try:
             cursor.execute("INSERT INTO groups (name) VALUES (?)", (name,))
         except sqlite3.IntegrityError:
             conn.close()
-            raise Exception("Group already exists")
+            raise ValueError(f"The group '{name}' already exists in your database.")
 
         conn.commit()
         conn.close()
 
         return name
 
-    def get_all_groups(self):
-        conn = sqlite3.connect(self.db_path)
+    @staticmethod
+    def get_all_groups():
+        conn = DatabaseManager.get_connection()
         cursor = conn.cursor()
 
         cursor.execute("SELECT name FROM groups")
@@ -34,8 +32,9 @@ class AddGroupService:
         conn.close()
         return [g[0] for g in groups]
 
-    def delete_group(self, name: str):
-        conn = sqlite3.connect(self.db_path)
+    @staticmethod
+    def delete_group(name: str):
+        conn = DatabaseManager.get_connection()
         cursor = conn.cursor()
 
         cursor.execute("DELETE FROM groups WHERE name = ?", (name,))

@@ -1,12 +1,10 @@
 import json
-from pathlib import Path
 import warnings
-
+from config import ACCOUNT_PATH
 
 class AccountService:
-    def __init__(self, root_path: Path):
-        self.root_path = root_path
-        self.account_file = self.root_path / "account.json"
+    def __init__(self):
+        self.account_file = ACCOUNT_PATH
 
         self.data = {
             "channel_handle": "",
@@ -25,13 +23,13 @@ class AccountService:
 
         try:
             data = json.loads(self.account_file.read_text())
-            if isinstance(data, dict):
-                self.data.update(data)
+            if not isinstance(data, dict):
+                raise ValueError("Settings file does not contain a JSON object")
+            self.data.update(data)
+        except json.JSONDecodeError:
+            warnings.warn(f"Settings file {self.account_file} is corrupted. Reverting to defaults.", RuntimeWarning)
         except Exception as e:
-            warnings.warn(
-                f"Failed to load account.json: {e}",
-                RuntimeWarning
-            )
+            warnings.warn(f"Failed to load settings from {self.account_file}: {e}", RuntimeWarning)
 
     def save(self):
         self.account_file.write_text(json.dumps(self.data, indent=4))

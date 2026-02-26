@@ -1,15 +1,13 @@
 import json
-from pathlib import Path
 import warnings
 import sys
 import os
 import subprocess
-
+from config import SETTINGS_PATH, DATA_DIR
 
 class SettingsService:
-    def __init__(self, root_path: Path):
-        self.root_path = root_path
-        self.config_file = self.root_path / "settings.json"
+    def __init__(self):
+        self.config_file = SETTINGS_PATH
 
         self.data = {
             "theme": "darkly",
@@ -17,7 +15,7 @@ class SettingsService:
             "close_to_tray": False,
         }
 
-        self.root_folder = self.root_path
+        self.root_folder = DATA_DIR
 
         self.load()
 
@@ -30,12 +28,10 @@ class SettingsService:
             if not isinstance(data, dict):
                 raise ValueError("Settings file does not contain a JSON object")
             self.data.update(data)
-
+        except json.JSONDecodeError:
+            warnings.warn(f"Settings file {self.config_file} is corrupted. Reverting to defaults.", RuntimeWarning)
         except Exception as e:
-            warnings.warn(
-                f"Failed to load settings from {self.config_file}: {e}",
-                RuntimeWarning,
-            )
+            warnings.warn(f"Failed to load settings from {self.config_file}: {e}", RuntimeWarning)
 
     def save(self):
         self.config_file.write_text(json.dumps(self.data, indent=4))
