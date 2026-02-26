@@ -183,7 +183,7 @@ class AddChannelService:
 
                 return True, f"Successfully added {channel_name}"
 
-            except yt_dlp.utils.DownloadError as net_err:
+            except DownloadError as net_err:
                 # specifically catches network, 404, or private video errors
                 print(f"NETWORK/YTDLP ERROR: {net_err}")
                 return False, f"CONNECTION ERROR:\nCould not reach YouTube or find the channel.\n\nDetails: {net_err}"

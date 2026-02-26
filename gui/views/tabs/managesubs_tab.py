@@ -5,29 +5,20 @@ from gui.dialogs.add_channel_dialog import AddChannelDialog
 
 
 class ManageSubsTab(ttk.Frame):
-    def __init__(self, parent, services):
+    def __init__(self, parent, add_group_service, add_channel_service):
         super().__init__(parent)
-
-        self.services = services
+        self.add_group_service = add_group_service
+        self.add_channel_service = add_channel_service
         self.tree = None
 
         self.build_ui()
         self.load_data()
 
-
-    # ---------- UI ----------
     def load_data(self):
-        groups = self.services.add_group.get_all_groups()
-
+        groups = self.add_group_service.get_all_groups()
         for group in groups:
-            group_id = self.tree.insert(
-                "",
-                "end",
-                text=group,
-                tags=("group",)
-            )
-
-            channels = self.services.add_channel.get_channels_by_group(group)
+            group_id = self.tree.insert("", "end", text=group, tags=("group",))
+            channels = self.add_channel_service.get_channels_by_group(group)
 
             for channel in channels:
                 self.tree.insert(
@@ -58,7 +49,7 @@ class ManageSubsTab(ttk.Frame):
     def add_group(self):
         dialog = AddGroupDialog(
             self.winfo_toplevel(),
-            self.services.add_group
+            self.add_group_service
         )
 
         self.wait_window(dialog)
@@ -94,7 +85,7 @@ class ManageSubsTab(ttk.Frame):
             return
 
         try:
-            channel_name = self.services.add_channel.add_channel(
+            channel_name = self.add_channel_service.add_channel(
                 group_name,
                 dialog.result
             )
@@ -127,9 +118,9 @@ class ManageSubsTab(ttk.Frame):
 
             try:
                 if "group" in tags:
-                    self.services.add_group.delete_group(text)
+                    self.add_group_service.delete_group(text)
                 else:
-                    self.services.add_channel.delete_channel(text)
+                    self.add_channel_service.delete_channel(text)
 
                 self.tree.delete(iid)
 

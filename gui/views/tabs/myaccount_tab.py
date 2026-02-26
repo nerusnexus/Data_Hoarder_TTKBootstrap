@@ -23,7 +23,7 @@ class MyAccountTab(ttk.Frame):
 
     def build_ui(self):
         # ---------- Account Info ----------
-        info_frame = ttk.LabelFrame(self, text="Account Info")
+        info_frame = ttk.Labelframe(self, text="Account Info")
         info_frame.pack(fill="x", padx=10, pady=10)
 
         ttk.Label(info_frame, text="Channel Handle:").grid(
@@ -53,7 +53,7 @@ class MyAccountTab(ttk.Frame):
         ).grid(row=3, column=0, columnspan=2, pady=5)
 
         # ---------- Stats ----------
-        stats_frame = ttk.LabelFrame(self, text="Channel Stats")
+        stats_frame = ttk.Labelframe(self, text="Channel Stats")
         stats_frame.pack(fill="x", padx=10, pady=10)
 
         self.subs_label = ttk.Label(stats_frame, text="")
@@ -63,7 +63,7 @@ class MyAccountTab(ttk.Frame):
         self.videos_label.pack(anchor="w", padx=5, pady=2)
 
         # ---------- Subscriptions (future use) ----------
-        subs_frame = ttk.LabelFrame(self, text="Subscriptions")
+        subs_frame = ttk.Labelframe(self, text="Subscriptions")
         subs_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
         self.sub_tree = ttk.Treeview(subs_frame)

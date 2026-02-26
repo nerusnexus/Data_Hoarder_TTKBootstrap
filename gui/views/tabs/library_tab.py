@@ -12,9 +12,10 @@ from config import METADATA_DIR
 
 
 class LibraryTab(ttk.Frame):
-    def __init__(self, parent, services):
+    def __init__(self, parent, add_group_service, add_channel_service):
         super().__init__(parent)
-        self.services = services
+        self.add_group_service = add_group_service
+        self.add_channel_service = add_channel_service
         self.tree = None
         self.library_label = None
         self.notebook = None
@@ -82,10 +83,10 @@ class LibraryTab(ttk.Frame):
             self.tab_frames[tab_name] = sf
 
     def load_tree_data(self):
-        groups = self.services.add_group.get_all_groups()
+        groups = self.add_group_service.get_all_groups()
         for group in groups:
             group_id = self.tree.insert("", "end", text=group, tags=("group",), open=True)
-            channels = self.services.add_channel.get_channels_by_group(group)
+            channels = self.add_group_service.get_channels_by_group(group)
             for channel in channels:
                 self.tree.insert(group_id, "end", text=channel, tags=("channel",))
 
@@ -97,10 +98,10 @@ class LibraryTab(ttk.Frame):
 
         channel_name = item["text"]
         self.library_label.config(text=f"Library: {channel_name}")
-        self.current_videos = self.services.add_channel.get_videos_by_channel(channel_name)
+        self.current_videos = self.add_channel_service.get_videos_by_channel(channel_name)
 
         # Fallback thumb dir (in case the new filepath structure fails)
-        channel_info = self.services.add_channel.get_channel_details(channel_name)
+        channel_info = self.add_channel_service.get_channel_details(channel_name)
         cid = channel_info.get("channel_id")
         handle = channel_info.get("handle")
         folder_name = f"{cid} ({handle})" if handle and handle != cid else cid

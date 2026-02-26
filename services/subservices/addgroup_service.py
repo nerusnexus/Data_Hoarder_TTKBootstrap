@@ -7,38 +7,28 @@ class AddGroupService:
         if not name:
             raise ValueError("Group name cannot be empty")
 
-        conn = DatabaseManager.get_connection()
-        cursor = conn.cursor()
-
-        try:
-            cursor.execute("INSERT INTO groups (name) VALUES (?)", (name,))
-        except sqlite3.IntegrityError:
-            conn.close()
-            raise ValueError(f"The group '{name}' already exists in your database.")
-
-        conn.commit()
-        conn.close()
+        # Using 'with' automatically handles commit() and close()
+        with DatabaseManager.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("INSERT INTO groups (name) VALUES (?)", (name,))
+            except sqlite3.IntegrityError:
+                raise ValueError(f"The group '{name}' already exists in your database.")
 
         return name
 
     @staticmethod
     def get_all_groups():
-        conn = DatabaseManager.get_connection()
-        cursor = conn.cursor()
-
-        cursor.execute("SELECT name FROM groups")
-        groups = cursor.fetchall()
-
-        conn.close()
-        return [g[0] for g in groups]
+        with DatabaseManager.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM groups")
+            groups = cursor.fetchall()
+            return [g[0] for g in groups]
 
     @staticmethod
     def delete_group(name: str):
-        conn = DatabaseManager.get_connection()
-        cursor = conn.cursor()
-
-        cursor.execute("DELETE FROM groups WHERE name = ?", (name,))
-        cursor.execute("DELETE FROM channels WHERE group_name = ?", (name,))
-
-        conn.commit()
-        conn.close()
+        with DatabaseManager.get_connection() as conn:
+            cursor = conn.cursor()
+            # Deleting a group also triggers cascades if foreign keys are ON
+            cursor.execute("DELETE FROM groups WHERE name = ?", (name,))
+            cursor.execute("DELETE FROM channels WHERE group_name = ?", (name,))
