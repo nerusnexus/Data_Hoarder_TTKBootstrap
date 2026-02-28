@@ -2,7 +2,7 @@ import ttkbootstrap as ttk
 from gui.views.tabs.managesubs_tab import ManageSubsTab
 from gui.views.tabs.myaccount_tab import MyAccountTab
 from gui.views.tabs.library_tab import LibraryTab
-from gui.views.tabs.dlp_fetchmetadata_tab import DlpFetchMetadataTab # New
+from gui.views.tabs.dlp_fetchmetadata_tab import DlpFetchMetadataTab
 
 class YtDlpView(ttk.Notebook):
     def __init__(self, parent, services):
@@ -14,10 +14,11 @@ class YtDlpView(ttk.Notebook):
             add_channel_service=services.add_channel
         )
 
-        self.fetch_tab = DlpFetchMetadataTab( # New
+        self.fetch_tab = DlpFetchMetadataTab(
             self,
             add_group_service=services.add_group,
-            add_channel_service=services.add_channel
+            add_channel_service=services.add_channel,
+            fetch_metadata_service=services.fetch_metadata # INJECTED HERE
         )
 
         self.managesubs_tab = ManageSubsTab(
@@ -33,6 +34,6 @@ class YtDlpView(ttk.Notebook):
         )
 
         self.add(self.library_tab, text="Library")
-        self.add(self.fetch_tab, text="Fetch Metadata") # Add here
+        self.add(self.fetch_tab, text="Fetch Metadata")
         self.add(self.managesubs_tab, text="Manage Subscriptions")
         self.add(self.myaccount_tab, text="My Account")
