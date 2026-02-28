@@ -5,7 +5,6 @@ def initialize_database():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
-    # Create the groups table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS groups (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -13,7 +12,6 @@ def initialize_database():
         )
     """)
 
-    # Expanded channels table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS channels (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -32,7 +30,6 @@ def initialize_database():
         )
     """)
 
-    # Video metadata table (now includes duration, description, tags, etc.)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS videos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -43,6 +40,7 @@ def initialize_database():
             view_count INTEGER,
             thumbnails TEXT,
             is_downloaded INTEGER DEFAULT 0,
+            is_metadata_downloaded INTEGER DEFAULT 0,
             video_type TEXT,
             upload_date TEXT,
             duration INTEGER,
@@ -51,6 +49,7 @@ def initialize_database():
             like_count INTEGER,
             comment_count INTEGER,
             filepath TEXT,
+            thumb_filepath TEXT,
             FOREIGN KEY(channel_name) REFERENCES channels(name) ON DELETE CASCADE
         )
     """)

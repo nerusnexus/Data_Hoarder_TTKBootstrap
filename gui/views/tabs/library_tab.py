@@ -33,6 +33,9 @@ class LibraryTab(ttk.Frame):
         self.build_ui()
         self.load_tree_data()
 
+        # NEW: Listen for background refresh events
+        self.winfo_toplevel().bind("<<DataUpdated>>", self.refresh_tree, add="+")
+
     def build_ui(self):
         sidebar = ttk.Frame(self, width=290)
         sidebar.pack(side=LEFT, fill=Y, padx=5, pady=5)
@@ -82,11 +85,15 @@ class LibraryTab(ttk.Frame):
                 sf.columnconfigure(i, weight=1)
             self.tab_frames[tab_name] = sf
 
+    def refresh_tree(self, _event=None):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        self.load_tree_data()
+
     def load_tree_data(self):
         groups = self.add_group_service.get_all_groups()
         for group in groups:
             group_id = self.tree.insert("", "end", text=group, tags=("group",), open=True)
-            # Use add_channel_service because it owns the channel database logic
             channels = self.add_channel_service.get_channels_by_group(group)
             for channel in channels:
                 self.tree.insert(group_id, "end", text=channel, tags=("channel",))
@@ -101,7 +108,6 @@ class LibraryTab(ttk.Frame):
         self.library_label.config(text=f"Library: {channel_name}")
         self.current_videos = self.add_channel_service.get_videos_by_channel(channel_name)
 
-        # Fallback thumb dir (in case the new filepath structure fails)
         channel_info = self.add_channel_service.get_channel_details(channel_name)
         cid = channel_info.get("channel_id")
         handle = channel_info.get("handle")
@@ -113,7 +119,7 @@ class LibraryTab(ttk.Frame):
     def on_search_typing(self, _event=None):
         if self._search_timer is not None:
             self.after_cancel(self._search_timer)
-        self._search_timer = self.after(1000, lambda: self.apply_filters_and_render())  # type: ignore
+        self._search_timer = self.after(1000, lambda: self.apply_filters_and_render())
 
     def on_sort_changed(self, _event=None):
         if self.current_videos:
@@ -155,14 +161,17 @@ class LibraryTab(ttk.Frame):
         card = ttk.Frame(parent, padding=10, bootstyle="secondary")
         card.grid(row=row, column=col, padx=10, pady=10, sticky="nsew")
 
-        # 1. Thumbnail Placeholder
+        # --- NEW: Looking up .webp database entry and disk paths ---
+        db_thumb = video.get("thumb_filepath")
         filepath_str = video.get("filepath")
-        if filepath_str:
-            thumb_path = Path(f"{filepath_str}.jpg")
-        else:
-            thumb_path = thumb_dir / f"{video['video_id']}.jpg"
 
-        # Defaults to No Thumbnail unless the image file exists
+        if db_thumb and Path(db_thumb).exists():
+            thumb_path = Path(db_thumb)
+        elif filepath_str and Path(f"{filepath_str}.webp").exists():
+            thumb_path = Path(f"{filepath_str}.webp")
+        else:
+            thumb_path = thumb_dir / f"{video['video_id']}.webp"
+
         img_label = ttk.Label(card, text="[No Thumbnail]", bootstyle="inverse-secondary", anchor=CENTER)
         img_label.pack(side=TOP, fill=X)
 
@@ -170,14 +179,12 @@ class LibraryTab(ttk.Frame):
             img_label.config(text="[Loading...]")
             self.image_queue.append((img_label, thumb_path))
 
-        # 2. Title
         title_text = video.get("title", "Unknown Title")
         ttk.Label(card, text=title_text, font=("Segoe UI", 9, "bold"), wraplength=280, justify=LEFT).pack(side=TOP,
                                                                                                           anchor=NW,
                                                                                                           pady=(8, 5),
                                                                                                           fill=X)
 
-        # 3. Info Row
         info_row = ttk.Frame(card, bootstyle="secondary")
         info_row.pack(side=TOP, fill=X, pady=(5, 0))
 
@@ -191,7 +198,6 @@ class LibraryTab(ttk.Frame):
         status_sym = "✅" if video.get("is_downloaded") else "🌐"
         ttk.Label(info_row, text=status_sym, font=("Segoe UI", 10)).pack(side=RIGHT)
 
-        # 4. Buttons Row
         btn_row = ttk.Frame(card, bootstyle="secondary")
         btn_row.pack(side=TOP, fill=X, pady=(10, 0))
 
@@ -253,7 +259,7 @@ class LibraryTab(ttk.Frame):
                 photo = ImageTk.PhotoImage(img)
                 label.config(image=photo, text="")
                 label.image = photo
-        except Exception as e: # Silently log thumbnail errors instead of crashing the UI loop
+        except Exception as e:
             print(f"Failed to load thumbnail from {path}: {e}")
 
-        self.after(5, self.process_image_queue)  # type: ignore
+        self.after(5, self.process_image_queue)

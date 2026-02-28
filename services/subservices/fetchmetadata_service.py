@@ -1,12 +1,11 @@
+import json
 import yt_dlp
-import traceback
 from pathlib import Path
 from config import METADATA_DIR
+from services.db.db_manager import DatabaseManager
 
 
 class FetchMetadataLogger:
-    """Helper class to redirect yt-dlp output to UI and a persistent file."""
-
     def __init__(self, log_callback, log_file_path):
         self.log_callback = log_callback
         self.log_file_path = log_file_path
@@ -45,19 +44,22 @@ class FetchMetadataService:
         self.metadata_dir = METADATA_DIR
 
     def fetch(self, videos: list, channel_name: str, params: dict, folder_name: str, handle: str, log_callback=None,
-              status_callback=None):
-        """Processes a list of individual video dictionaries directly from the database."""
+              status_callback=None, stop_event=None):
         target_dir = self.metadata_dir / folder_name
         target_dir.mkdir(parents=True, exist_ok=True)
-
-        # Unique log file per channel
         log_file_path = target_dir / f"{handle} Logs.txt"
+
+        deno_path = params.get("deno_path", "").strip()
+        js_runtimes = {'deno': {'path': deno_path if deno_path else None}}
+
+        skip_downloaded = params.get("skip_downloaded", False)
 
         ydl_opts = {
             'quiet': True,
             'skip_download': True,
-            # ERROR 2 FIXED: This tells yt-dlp NOT to complain if JS challenges fail for formats!
             'ignore_no_formats_error': True,
+            'js_runtimes': js_runtimes,
+            'remote_components': ['ejs:github'],
             'writeinfojson': params.get("--write-info-json", True),
             'writedescription': params.get("--write-description", True),
             'writethumbnail': params.get("--write-thumbnail", True),
@@ -69,7 +71,7 @@ class FetchMetadataService:
             'retries': int(params.get("--retries", 10)),
             'fragment_retries': int(params.get("--fragment-retries", 10)),
             'logger': FetchMetadataLogger(log_callback, log_file_path),
-            'ignoreerrors': True,  # Keep going even if a video was deleted/privated
+            'ignoreerrors': True,
         }
 
         if params.get("use_cookies", True):
@@ -78,35 +80,81 @@ class FetchMetadataService:
         if log_callback:
             log_callback(f"\n--- Starting metadata extraction for {len(videos)} videos from {channel_name} ---")
 
-        # ERROR 4 FIXED: We group the videos by the folder they belong to (Videos vs Shorts vs Lives)
-        # Your DB already knows exactly where they should go based on their filepath!
         groups = {}
         for video in videos:
-            if not video.get('url') or not video.get('filepath'):
+            if skip_downloaded and video.get('is_metadata_downloaded') == 1:
+                if log_callback: log_callback(f"Skipped {video.get('title')} - Metadata already downloaded.")
                 continue
 
-            parent_dir = str(Path(video['filepath']).parent)
+            vid_url = video.get('url')
+            if not vid_url:
+                if video.get('video_id'):
+                    vid_url = f"https://www.youtube.com/watch?v={video['video_id']}"
+                else:
+                    continue
+
+            video['url'] = vid_url
+
+            filepath = video.get('filepath')
+            if not filepath:
+                vid_type = video.get('video_type', 'Videos')
+                filepath = str(target_dir / f"({handle}) {vid_type}" / f"{video.get('video_id', 'unknown')}")
+
+            parent_dir = str(Path(filepath).parent)
             if parent_dir not in groups:
                 groups[parent_dir] = []
             groups[parent_dir].append(video)
 
+        total_videos = sum(len(group) for group in groups.values())
         processed_count = 0
-        total_videos = len(videos)
+
+        if total_videos == 0:
+            if log_callback: log_callback("No videos required processing (all skipped).")
+            if status_callback: status_callback("Finished", 0, 0)
+            return True, "Success"
 
         for parent_dir, video_group in groups.items():
-            # Dynamically set the output template for this specific folder (e.g. Shorts)
             ydl_opts['outtmpl'] = {'default': parent_dir + "/%(upload_date|00000000)s_%(title)s.%(ext)s"}
 
             try:
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     for video in video_group:
+                        if stop_event and stop_event.is_set():
+                            if log_callback: log_callback("Worker stopped by user.")
+                            return False, "Stopped"
+
                         url = video['url']
+                        title = video.get('title', 'video')
+                        video_id = video.get('video_id')
+                        filepath = video.get('filepath')
+
+                        if log_callback:
+                            log_callback(f"Extracting metadata for: {title}")
+
                         if status_callback:
-                            status_callback(f"Extracting {video.get('title', 'video')}...", processed_count,
-                                            total_videos)
+                            status_callback(f"Extracting {title}...", processed_count, total_videos)
 
                         try:
-                            ydl.extract_info(url, download=False)
+                            info_dict = ydl.extract_info(url, download=True)
+
+                            # --- NEW: Real-time DB population from memory ---
+                            if info_dict:
+                                duration = info_dict.get('duration', 0)
+                                description = info_dict.get('description', '')
+                                tags_json = json.dumps(info_dict.get('tags', []))
+                                like_count = info_dict.get('like_count', 0)
+                                comment_count = info_dict.get('comment_count', 0)
+                                thumb_path = f"{filepath}.webp"
+
+                                with DatabaseManager.get_connection() as conn:
+                                    conn.execute("""
+                                        UPDATE videos 
+                                        SET is_metadata_downloaded = 1, duration = ?, description = ?, tags = ?, like_count = ?, comment_count = ?, thumb_filepath = ?
+                                        WHERE video_id = ?
+                                    """, (duration, description, tags_json, like_count, comment_count, thumb_path,
+                                          video_id))
+                                    conn.commit()
+
                         except Exception as e:
                             if log_callback:
                                 log_callback(f"Error on {url}: {e}")

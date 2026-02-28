@@ -15,18 +15,16 @@ class YtDlpService:
             channel_input = channel_input.lstrip("@")
             channel_input = f"https://www.youtube.com/@{channel_input}"
 
-        # Explicitly declare this as a dictionary that accepts Any value type
         opts: dict[str, typing.Any] = {
             "quiet": True,
             "skip_download": True,
             "extract_flat": True,
+            "js_runtimes": {"deno": {"path": None}},
+            "remote_components": ["ejs:github"] # <--- NEW FIX
         }
 
-        # Tell the IDE to ignore the strict _Params requirement
         with YoutubeDL(opts) as ydl:  # type: ignore
             raw_info = ydl.extract_info(channel_input, download=False)
-
-            # Convert the strict TypedDict to a normal dictionary to bypass missing key warnings
             info = dict(raw_info) if raw_info else {}
 
         return {

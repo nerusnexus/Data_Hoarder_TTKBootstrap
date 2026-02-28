@@ -32,19 +32,15 @@ class ManageSubsTab(ttk.Frame):
         container = ttk.Frame(self)
         container.pack(fill="both", expand=True, padx=10, pady=10)
 
-        # Treeview
         self.tree = ttk.Treeview(container, show="tree")
         self.tree.pack(side="left", fill="both", expand=True)
 
-        # Buttons
         buttons = ttk.Frame(container)
         buttons.pack(side="right", fill="y", padx=(10, 0))
 
         ttk.Button(buttons, text="+ Group", command=self.add_group).pack(fill="x", pady=5)
         ttk.Button(buttons, text="+ Channel", command=self.add_channel).pack(fill="x", pady=5)
         ttk.Button(buttons, text="Delete", command=self.delete_selected).pack(fill="x", pady=5)
-
-    # ---------- Actions ----------
 
     def add_group(self):
         dialog = AddGroupDialog(
@@ -61,6 +57,8 @@ class ManageSubsTab(ttk.Frame):
                 text=dialog.result,
                 tags=("group",)
             )
+            # Broadcast update
+            self.winfo_toplevel().event_generate("<<DataUpdated>>")
 
     def add_channel(self):
         selected = self.tree.selection()
@@ -71,7 +69,6 @@ class ManageSubsTab(ttk.Frame):
 
         parent_iid = selected[0]
 
-        # Check if selected item is a group
         if "group" not in self.tree.item(parent_iid, "tags"):
             Messagebox.show_error("Error", "Select a group, not a channel")
             return
@@ -97,6 +94,9 @@ class ManageSubsTab(ttk.Frame):
                 tags=("channel",)
             )
 
+            # Broadcast update
+            self.winfo_toplevel().event_generate("<<DataUpdated>>")
+
         except Exception as e:
             Messagebox.show_error("Error", str(e))
 
@@ -107,8 +107,8 @@ class ManageSubsTab(ttk.Frame):
             return
 
         if not Messagebox.okcancel(
-            "Confirm delete",
-            "Delete selected item(s)?"
+                "Confirm delete",
+                "Delete selected item(s)?"
         ):
             return
 
@@ -123,6 +123,9 @@ class ManageSubsTab(ttk.Frame):
                     self.add_channel_service.delete_channel(text)
 
                 self.tree.delete(iid)
+
+                # Broadcast update
+                self.winfo_toplevel().event_generate("<<DataUpdated>>")
 
             except Exception as e:
                 Messagebox.show_error("Error", str(e))
