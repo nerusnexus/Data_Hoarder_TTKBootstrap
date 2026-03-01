@@ -3,7 +3,7 @@ from gui.views.tabs.managesubs_tab import ManageSubsTab
 from gui.views.tabs.myaccount_tab import MyAccountTab
 from gui.views.tabs.library_tab import LibraryTab
 from gui.views.tabs.dlp_fetchmetadata_tab import DlpFetchMetadataTab
-from gui.views.tabs.dlp_download_tab import DlpDownloadTab  # <-- NEW IMPORT
+from gui.views.tabs.dlp_download_tab import DlpDownloadTab
 
 class YtDlpView(ttk.Notebook):
     def __init__(self, parent, services):
@@ -12,27 +12,27 @@ class YtDlpView(ttk.Notebook):
         self.library_tab = LibraryTab(
             self,
             add_group_service=services.add_group,
-            add_channel_service=services.add_channel
+            add_channel_service=services.add_channel_service  # <-- FIXED: Added _service
         )
 
         self.fetch_tab = DlpFetchMetadataTab(
             self,
             add_group_service=services.add_group,
-            add_channel_service=services.add_channel,
+            add_channel_service=services.add_channel_service, # <-- FIXED
             fetch_metadata_service=services.fetch_metadata
         )
 
         self.download_tab = DlpDownloadTab(
             self,
             add_group_service=services.add_group,
-            add_channel_service=services.add_channel,
+            add_channel_service=services.add_channel_service, # <-- FIXED
             dlp_download_service=services.dlp_download_service
         )
 
         self.managesubs_tab = ManageSubsTab(
             self,
             add_group_service=services.add_group,
-            add_channel_service=services.add_channel
+            add_channel_service=services.add_channel_service  # <-- FIXED
         )
 
         self.myaccount_tab = MyAccountTab(

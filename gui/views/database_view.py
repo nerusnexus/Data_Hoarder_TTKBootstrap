@@ -12,8 +12,8 @@ class DatabaseView(ttk.Notebook):
         self.build()
 
     def build(self):
-        # Initialize the tab by injecting only the required service
-        self.tree_tab = DbTreeviewTab(self, self.services.add_channel)
+        # FIXED: Changed self.services.add_channel to self.services.add_channel_service
+        self.tree_tab = DbTreeviewTab(self, self.services.add_channel_service)
         self.manage_tab = ttk.Frame(self)
 
         # Add tabs to the notebook

@@ -1,4 +1,5 @@
 import ttkbootstrap as ttk
+from ttkbootstrap.dialogs import Messagebox
 
 
 class SettingsView(ttk.Notebook):
@@ -22,12 +23,13 @@ class SettingsView(ttk.Notebook):
         self.start_var = None
         self.theme_var = None
 
-        # Now we just call self.settings directly
         self.close_to_tray_var = ttk.BooleanVar(
             value=self.settings.get_close_to_tray()
         )
 
         self.build_general_tab()
+        self.build_ytdlp_tab()
+        self.build_database_tab()
 
     def build_general_tab(self):
         # --- Theme ---
@@ -76,7 +78,6 @@ class SettingsView(ttk.Notebook):
         ).pack(anchor="w", padx=20, pady=5)
 
     def on_theme_change(self, _event):
-        # Call the injected theme changer function
         self.change_theme_func(self.theme_var.get())
 
     def on_start_with_system_change(self):
@@ -85,7 +86,21 @@ class SettingsView(ttk.Notebook):
         )
 
     def build_ytdlp_tab(self):
-        pass
+        # --- YouTube API Key UI ---
+        ttk.Label(self.ytdlp, text="YouTube Data API v3 Key:").pack(anchor="w", padx=20, pady=(10, 0))
+
+        api_frame = ttk.Frame(self.ytdlp)
+        api_frame.pack(fill="x", padx=20, pady=5)
+
+        self.api_var = ttk.StringVar(value=self.settings.get_youtube_api_key())
+        api_entry = ttk.Entry(api_frame, textvariable=self.api_var, width=50, show="*")
+        api_entry.pack(side="left", padx=(0, 10))
+
+        ttk.Button(api_frame, text="Save Key", bootstyle="success", command=self.on_api_key_saved).pack(side="left")
 
     def build_database_tab(self):
         pass
+
+    def on_api_key_saved(self):
+        self.settings.set_youtube_api_key(self.api_var.get())
+        Messagebox.show_info("Settings Saved", "YouTube API Key saved successfully.")

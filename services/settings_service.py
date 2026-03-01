@@ -1,74 +1,73 @@
 import json
-import warnings
-import sys
 import os
+import sys
 import subprocess
+from pathlib import Path
 from config import SETTINGS_PATH, DATA_DIR
 
 class SettingsService:
-    def __init__(self):
-        self.config_file = SETTINGS_PATH
-
-        self.data = {
+    def __init__(self, style_instance=None):
+        self.settings_path = SETTINGS_PATH
+        self.style = style_instance
+        self.default_settings = {
             "theme": "darkly",
-            "start_with_system": False,
             "close_to_tray": False,
+            "start_with_system": False,
+            "youtube_api_key": ""
         }
+        self.settings = self.load_settings()
 
-        self.root_folder = DATA_DIR
-
-        self.load()
-
-    def load(self):
-        if not self.config_file.exists():
-            return
-
+    def load_settings(self):
+        if not self.settings_path.exists():
+            self.save_settings(self.default_settings)
+            return self.default_settings
         try:
-            data = json.loads(self.config_file.read_text())
-            if not isinstance(data, dict):
-                raise ValueError("Settings file does not contain a JSON object")
-            self.data.update(data)
-        except json.JSONDecodeError:
-            warnings.warn(f"Settings file {self.config_file} is corrupted. Reverting to defaults.", RuntimeWarning)
-        except Exception as e:
-            warnings.warn(f"Failed to load settings from {self.config_file}: {e}", RuntimeWarning)
+            with open(self.settings_path, 'r') as f:
+                data = json.load(f)
+                for key, val in self.default_settings.items():
+                    if key not in data:
+                        data[key] = val
+                return data
+        except Exception:
+            return self.default_settings
 
-    def save(self):
-        try:
-            json_data = json.dumps(self.data, indent=4)
-            self.config_file.write_text(json_data)
-        except Exception as e:
-            warnings.warn(f"Failed to save settings to {self.config_file}: {e}", RuntimeWarning)
+    def save_settings(self, settings_data):
+        with open(self.settings_path, 'w') as f:
+            json.dump(settings_data, f, indent=4)
+        self.settings = settings_data
 
-    # --- getters ---
     def get_theme(self):
-        return self.data["theme"]
+        return self.settings.get("theme", "darkly")
+
+    def set_theme(self, theme_name):
+        self.settings["theme"] = theme_name
+        self.save_settings(self.settings)
+
+    def get_close_to_tray(self):
+        return self.settings.get("close_to_tray", False)
+
+    def set_close_to_tray(self, value):
+        self.settings["close_to_tray"] = value
+        self.save_settings(self.settings)
 
     def get_start_with_system(self):
-        return self.data["start_with_system"]
+        return self.settings.get("start_with_system", False)
 
-    # --- setters ---
-    def set_theme(self, theme: str):
-        self.data["theme"] = theme
-        self.save()
-
-    def set_start_with_system(self, value: bool):
-        self.data["start_with_system"] = value
-        self.save()
+    def set_start_with_system(self, value):
+        self.settings["start_with_system"] = value
+        self.save_settings(self.settings)
 
     def open_data_folder(self):
-        path = self.root_folder
-
         if sys.platform.startswith("win"):
-            os.startfile(path)
+            os.startfile(DATA_DIR)
         elif sys.platform == "darwin":
-            subprocess.run(["open", path])
+            subprocess.run(["open", DATA_DIR])
         else:
-            subprocess.run(["xdg-open", path])
+            subprocess.run(["xdg-open", DATA_DIR])
 
-    def get_close_to_tray(self) -> bool:
-        return self.data.get("close_to_tray", False)
+    def get_youtube_api_key(self):
+        return self.settings.get("youtube_api_key", "")
 
-    def set_close_to_tray(self, value: bool):
-        self.data["close_to_tray"] = value
-        self.save()
+    def set_youtube_api_key(self, key):
+        self.settings["youtube_api_key"] = key
+        self.save_settings(self.settings)

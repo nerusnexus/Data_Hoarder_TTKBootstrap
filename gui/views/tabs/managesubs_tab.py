@@ -31,8 +31,6 @@ def format_number(num):
 
 
 class ResponsiveImage(ttk.Canvas):
-    """A Canvas that holds an image and dynamically resizes it to fit its width while maintaining its aspect ratio."""
-
     def __init__(self, parent, original_img, aspect_ratio, bg_color="black", **kwargs):
         super().__init__(parent, highlightthickness=0, background=bg_color, **kwargs)
         self.original_img = original_img
@@ -136,7 +134,7 @@ class ManageSubsTab(ttk.Frame):
         card = ttk.Frame(border_frame, bootstyle="dark", padding=10)
         card.pack(fill="both", expand=True, padx=1, pady=1)
 
-        card.columnconfigure(0, weight=4, uniform="card_cols")
+        card.columnconfigure(0, weight=2, uniform="card_cols")
         card.columnconfigure(1, weight=12, uniform="card_cols")
 
         cid = channel_info.get("channel_id")
@@ -172,7 +170,6 @@ class ManageSubsTab(ttk.Frame):
         right_container = ttk.Frame(card, bootstyle="dark")
         right_container.grid(row=0, column=1, sticky="nsew")
 
-        # 1. BANNER
         banner_border = ttk.Frame(right_container, bootstyle="light")
         banner_border.pack(side="top", fill="x", anchor="nw")
 
@@ -189,44 +186,29 @@ class ManageSubsTab(ttk.Frame):
                                      bootstyle="inverse-dark")
             banner_label.pack(fill="both", expand=True, padx=1, pady=1, ipady=40)
 
-        # 2. CONTENT FRAME (3 Columns: Stats, Description, Links)
         content_frame = ttk.Frame(right_container, bootstyle="dark")
         content_frame.pack(side="top", fill="both", expand=True, pady=(10, 0))
 
-        content_frame.columnconfigure(0, weight=4)  # Stats
-        content_frame.columnconfigure(1, weight=4)  # Description
-        content_frame.columnconfigure(2, weight=3)  # Links
+        content_frame.columnconfigure(0, weight=5, uniform="content_cols")
+        content_frame.columnconfigure(1, weight=5, uniform="content_cols")
+        content_frame.columnconfigure(2, weight=2, uniform="content_cols")
 
-        # --- DATA PREPARATION ---
         name = channel_info.get("name", "Unknown")
         url = channel_info.get("url", "")
         subs_formatted = format_number(channel_info.get("follower_count", 0))
 
-        # Query DB for video counts
         videos = self.add_channel_service.get_videos_by_channel(name)
         v_count = sum(1 for v in videos if v.get("video_type") == "Videos")
         s_count = sum(1 for v in videos if v.get("video_type") == "Shorts")
         l_count = sum(1 for v in videos if v.get("video_type") == "Lives")
 
-        # Parse JSON for extra details
-        json_data = {}
-        json_path = local_path / f"{cid}_({safe_handle}).json"
-        if not json_path.exists(): json_path = local_path / f"{cid}.json"
-        if json_path.exists():
-            try:
-                with open(json_path, "r", encoding="utf-8") as f:
-                    json_data = json.load(f)
-            except Exception:
-                pass
-
-        # Creation Date Parsing
-        raw_date = json_data.get("channel_joined") or json_data.get("upload_date")
+        creation_date = channel_info.get("creation_date") or ""
         date_str = "Unknown"
-        if raw_date and len(str(raw_date)) == 8:
-            date_str = f"{str(raw_date)[6:8]}/{str(raw_date)[4:6]}/{str(raw_date)[0:4]}"
+        if creation_date and len(str(creation_date)) == 8:
+            date_str = f"{str(creation_date)[6:8]}/{str(creation_date)[4:6]}/{str(creation_date)[0:4]}"
 
-        country = json_data.get("channel_country") or "Unknown"
-        views_formatted = format_number(json_data.get("channel_view_count") or json_data.get("view_count") or 0)
+        country = channel_info.get("country") or "Unknown"
+        views_formatted = format_number(channel_info.get("view_count") or 0)
 
         # ====== COLUMN 1: STATS ======
         stats_frame = ttk.Frame(content_frame, bootstyle="dark")
@@ -260,10 +242,13 @@ class ManageSubsTab(ttk.Frame):
         ttk.Label(desc_frame, text="Description:", font=("Segoe UI", 9, "bold"), bootstyle="light").pack(anchor="w",
                                                                                                          pady=(0, 2))
 
-        desc_text = ttk.Text(desc_frame, height=5, wrap="word", font=("Segoe UI", 8), background="#222",
-                             foreground="#eee", relief="flat")
-        desc_text.pack(fill="both", expand=True)
-        desc_text.insert("1.0", channel_info.get("description") or "No description available.")
+        desc_str = channel_info.get("description") or "No description available."
+
+        # Locked description height
+        desc_text = ttk.Text(desc_frame, height=4, wrap="word", font=("Segoe UI", 8), background="#222",
+                             foreground="#eee", borderwidth=0, highlightthickness=0)
+        desc_text.pack(fill="x", pady=2)
+        desc_text.insert("1.0", desc_str)
         desc_text.configure(state="disabled")
 
         # ====== COLUMN 3: LINKS ======
@@ -276,11 +261,24 @@ class ManageSubsTab(ttk.Frame):
         links_scroll = ScrolledFrame(links_frame, autohide=True)
         links_scroll.pack(fill="both", expand=True)
 
-        links = json_data.get("links", [])
+        links_json_str = channel_info.get("links", "[]")
+        try:
+            links = json.loads(links_json_str) if links_json_str else []
+        except:
+            links = []
+
         if links:
             for link in links:
-                l_title = link.get("title") or "Link"
-                l_url = link.get("url") or ""
+                if isinstance(link, str):
+                    l_title = link.split("://")[-1].split("/")[0]
+                    l_url = link
+                else:
+                    l_title = link.get("title") or link.get("url", "Link")
+                    l_url = link.get("url") or ""
+
+                if len(l_title) > 20:
+                    l_title = l_title[:17] + "..."
+
                 if l_url:
                     lbl = ttk.Label(links_scroll, text=f"🔗 {l_title}", font=("Segoe UI", 8, "underline"),
                                     bootstyle="info", cursor="hand2")

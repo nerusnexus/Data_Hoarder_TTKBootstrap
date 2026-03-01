@@ -25,6 +25,10 @@ def initialize_database():
             description TEXT,
             tags TEXT,
             thumbnails TEXT,
+            creation_date TEXT,
+            country TEXT,
+            view_count INTEGER,
+            links TEXT,
             FOREIGN KEY(group_name) REFERENCES groups(name) ON DELETE CASCADE
         )
     """)

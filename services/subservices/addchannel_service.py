@@ -4,7 +4,7 @@ import yt_dlp
 import re
 import traceback
 import typing
-import urllib.request  # <-- NEW IMPORT
+import urllib.request
 from config import METADATA_DIR
 from services.db.db_manager import DatabaseManager
 from yt_dlp.utils import DownloadError
@@ -16,8 +16,9 @@ def sanitize_filename(name):
 
 
 class AddChannelService:
-    def __init__(self, ytdlp=None):
+    def __init__(self, ytdlp=None, settings=None):  # <-- NEW: Accepts settings
         self.ytdlp = ytdlp
+        self.settings = settings
         self.metadata_folder = METADATA_DIR
 
     @staticmethod
@@ -90,9 +91,48 @@ class AddChannelService:
                     safe_handle = f"@{channel_id}"
 
                 follower_count = info.get("channel_follower_count") or info.get("subscriber_count") or 0
-                description = info.get("description") or ""
                 tags_json = json.dumps(info.get("tags", []))
                 chan_thumbnails_json = json.dumps(info.get("thumbnails", []))
+
+                # Default fallbacks
+                creation_date = info.get("channel_joined", "")
+                country = info.get("channel_country", "Unknown")
+                channel_view_count = info.get("channel_view_count", 0)
+                description = info.get("description", "")
+                links_json = json.dumps(info.get("links", []))
+
+                # --- NEW: Retrieve API key securely from local settings ---
+                api_key = self.settings.get_youtube_api_key() if self.settings else ""
+
+                if api_key and channel_id != "Unknown_ID":
+                    if progress_callback: progress_callback("Pinging YouTube API for exact stats...")
+                    api_url = f"https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&id={channel_id}&key={api_key}"
+                    try:
+                        req = urllib.request.Request(api_url)
+                        with urllib.request.urlopen(req) as response:
+                            api_data = json.loads(response.read().decode())
+                            if api_data.get("items"):
+                                item = api_data["items"][0]
+                                snippet = item.get("snippet", {})
+                                stats = item.get("statistics", {})
+
+                                # API Date Format: "2009-07-23T00:46:17Z" -> Convert to "20090723"
+                                pub_date = snippet.get("publishedAt", "")
+                                if pub_date:
+                                    creation_date = pub_date[:10].replace("-", "")
+
+                                country = snippet.get("country", country)
+                                channel_view_count = int(stats.get("viewCount", channel_view_count))
+                                description = snippet.get("description", description)
+
+                                # Inject back into JSON dictionary
+                                info["channel_joined"] = creation_date
+                                info["channel_country"] = country
+                                info["channel_view_count"] = channel_view_count
+                                info["description"] = description
+                    except Exception as e:
+                        print(f"API Error: {e}")
+                # ----------------------------------------------------------
 
                 with self.get_connection() as conn:
                     cursor = conn.cursor()
@@ -100,21 +140,22 @@ class AddChannelService:
                     cursor.execute("SELECT id FROM channels WHERE group_name = ? AND name = ?", (group, channel_name))
                     if cursor.fetchone():
                         cursor.execute("""
-                            UPDATE channels SET handle=?, channel_id=?, url=?, title=?, follower_count=?, description=?, tags=?, thumbnails=?
+                            UPDATE channels SET handle=?, channel_id=?, url=?, title=?, follower_count=?, description=?, tags=?, thumbnails=?, creation_date=?, country=?, view_count=?, links=?
                             WHERE group_name=? AND name=?
                         """, (handle, channel_id, info.get("uploader_url") or url, info.get("title"),
-                              follower_count, description, tags_json, chan_thumbnails_json, group, channel_name))
+                              follower_count, description, tags_json, chan_thumbnails_json, creation_date, country,
+                              channel_view_count, links_json, group, channel_name))
                     else:
                         cursor.execute("""
-                            INSERT INTO channels (group_name, name, handle, channel_id, url, title, follower_count, description, tags, thumbnails)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            INSERT INTO channels (group_name, name, handle, channel_id, url, title, follower_count, description, tags, thumbnails, creation_date, country, view_count, links)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """, (group, channel_name, handle, channel_id, info.get("uploader_url") or url,
-                              info.get("title"), follower_count, description, tags_json, chan_thumbnails_json))
+                              info.get("title"), follower_count, description, tags_json, chan_thumbnails_json,
+                              creation_date, country, channel_view_count, links_json))
 
                     def extract_all_videos(data):
                         videos = []
-                        if not data:
-                            return videos
+                        if not data: return videos
                         if data.get("id") and data.get("_type") != "playlist" and data.get("url"):
                             videos.append(data)
                         if "entries" in data and data["entries"]:
@@ -129,46 +170,39 @@ class AddChannelService:
                     channel_folder = self.metadata_folder / folder_name
                     channel_folder.mkdir(parents=True, exist_ok=True)
 
-                    # --- NEW: Extract and Download Profile Picture & Banner ---
                     thumbnails = info.get("thumbnails", [])
                     avatar_url = None
                     banner_url = None
 
-                    # yt-dlp explicitly tags avatars and banners in the thumbnail id string
                     avatars = [t for t in thumbnails if 'avatar' in t.get('id', '').lower()]
                     banners = [t for t in thumbnails if 'banner' in t.get('id', '').lower()]
 
-                    # Get the highest resolution ones (usually at the end of the list)
                     if avatars:
                         avatar_url = avatars[-1].get("url")
-                    elif thumbnails:  # Fallback just in case
+                    elif thumbnails:
                         avatar_url = thumbnails[-1].get("url")
 
-                    if banners:
-                        banner_url = banners[-1].get("url")
+                    if banners: banner_url = banners[-1].get("url")
 
-                    # Download them locally to the newly created channel folder
                     req_headers = {'User-Agent': 'Mozilla/5.0'}
                     if avatar_url:
                         try:
                             req = urllib.request.Request(avatar_url, headers=req_headers)
                             with urllib.request.urlopen(req) as resp, open(channel_folder / "profile.jpg", 'wb') as f:
                                 f.write(resp.read())
-                        except Exception as e:
-                            print(f"Failed to download avatar: {e}")
+                        except Exception:
+                            pass
 
                     if banner_url:
                         try:
                             req = urllib.request.Request(banner_url, headers=req_headers)
                             with urllib.request.urlopen(req) as resp, open(channel_folder / "banner.jpg", 'wb') as f:
                                 f.write(resp.read())
-                        except Exception as e:
-                            print(f"Failed to download banner: {e}")
-                    # ---------------------------------------------------------
+                        except Exception:
+                            pass
 
                     for i, video_entry in enumerate(all_videos):
-                        if not video_entry:
-                            continue
+                        if not video_entry: continue
 
                         url_chk = video_entry.get("url") or video_entry.get("webpage_url") or ""
                         video_id = video_entry.get("id") or f"unknown_{i}"
@@ -205,7 +239,7 @@ class AddChannelService:
                                 break
 
                         is_metadata_downloaded = 1 if (
-                                video_folder / f"{expected_filename_base}.info.json").exists() else 0
+                                    video_folder / f"{expected_filename_base}.info.json").exists() else 0
 
                         cursor.execute("SELECT id FROM videos WHERE video_id = ? AND channel_name = ?",
                                        (video_id, channel_name))
@@ -220,8 +254,7 @@ class AddChannelService:
                                 INSERT INTO videos (channel_name, video_id, title, url, view_count, is_downloaded, is_metadata_downloaded, video_type, upload_date, thumbnails, filepath)
                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """, (channel_name, video_id, title, url_chk, view_count, is_downloaded,
-                                  is_metadata_downloaded, v_type,
-                                  upload_date, thumbnails_json, str(filepath_base)))
+                                  is_metadata_downloaded, v_type, upload_date, thumbnails_json, str(filepath_base)))
 
                         if progress_callback and i % 10 == 0:
                             progress_callback(f"Processing video {i}/{total}...")
