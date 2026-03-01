@@ -1,19 +1,31 @@
+import ctypes
+import sys
 from ttkbootstrap import Style
 from gui.ui import MainUI
 from services.services import AppServices
 from gui.tray import TrayManager
 from oled_theme import theme as oled_theme
+from config import FONTS_DIR
+
+
+def load_custom_fonts():
+    """Temporarily installs the TTF font into Windows for this app session."""
+    if sys.platform.startswith("win"):
+        font_path = FONTS_DIR / "MaterialSymbolsRounded.ttf"
+        if font_path.exists():
+            FR_PRIVATE = 0x10
+            ctypes.windll.gdi32.AddFontResourceExW(str(font_path), FR_PRIVATE, 0)
+        else:
+            print(f"Font not found at {font_path}. Skipping custom icons.")
 
 
 def main():
-    style = Style()
+    load_custom_fonts()
 
-    # Register your custom OLED theme into ttkbootstrap's system
+    style = Style()
     style.register_theme(oled_theme)
 
-    # We no longer need to pass 'data_folder' here!
     services = AppServices(style)
-
     style.theme_use(services.settings.get_theme())
 
     root = style.master

@@ -8,7 +8,7 @@ import webbrowser
 import os
 import sys
 import subprocess
-from config import METADATA_DIR
+from config import METADATA_DIR, FONTS_DIR
 
 
 class LibraryTab(ttk.Frame):
@@ -29,6 +29,13 @@ class LibraryTab(ttk.Frame):
         self.image_queue = []
         self.is_loading_images = False
         self.current_thumb_dir = None
+
+        self.has_icon_font = (FONTS_DIR / "MaterialSymbolsRounded.ttf").exists()
+        if self.has_icon_font:
+            style = ttk.Style()
+            # Generate an Icon Outline style for every bootstyle color!
+            for color in ["primary", "secondary", "success", "info", "warning", "danger", "light", "dark"]:
+                style.configure(f"Icon.{color}.Outline.TButton", font=("Material Symbols Rounded", 16))
 
         self.build_ui()
         self.load_tree_data()
@@ -157,10 +164,14 @@ class LibraryTab(ttk.Frame):
             self.process_image_queue()
 
     def create_video_card(self, parent, video, thumb_dir, row, col):
-        card = ttk.Frame(parent, padding=10, bootstyle="secondary")
-        card.grid(row=row, column=col, padx=10, pady=10, sticky="nsew")
+        # Outer frame acts as the white outline
+        border_frame = ttk.Frame(parent, bootstyle="light")
+        border_frame.grid(row=row, column=col, padx=10, pady=10, sticky="nsew")
 
-        # --- Dynamic Thumbnail Finder (.webp AND .jpg safety net) ---
+        # Inner frame is the black card. The 1px padding leaves a perfect white outline showing through!
+        card = ttk.Frame(border_frame, padding=10, bootstyle="dark")
+        card.pack(fill=BOTH, expand=True, padx=1, pady=1)
+
         thumb_path = None
         db_thumb = video.get("thumb_filepath")
         filepath_str = video.get("filepath")
@@ -168,7 +179,7 @@ class LibraryTab(ttk.Frame):
         candidates = []
         if db_thumb:
             candidates.append(Path(db_thumb))
-            candidates.append(Path(db_thumb).with_suffix('.jpg'))  # Safety net
+            candidates.append(Path(db_thumb).with_suffix('.jpg'))
 
         if filepath_str:
             candidates.append(Path(f"{filepath_str}.webp"))
@@ -182,7 +193,7 @@ class LibraryTab(ttk.Frame):
                 thumb_path = cand
                 break
 
-        img_label = ttk.Label(card, text="[No Thumbnail]", bootstyle="inverse-secondary", anchor=CENTER)
+        img_label = ttk.Label(card, text="[No Thumbnail]", bootstyle="light", anchor=CENTER)
         img_label.pack(side=TOP, fill=X)
 
         if thumb_path:
@@ -195,7 +206,7 @@ class LibraryTab(ttk.Frame):
                                                                                                           pady=(8, 5),
                                                                                                           fill=X)
 
-        info_row = ttk.Frame(card, bootstyle="secondary")
+        info_row = ttk.Frame(card, bootstyle="dark")
         info_row.pack(side=TOP, fill=X, pady=(5, 0))
 
         views = video.get("view_count") or 0
@@ -205,31 +216,88 @@ class LibraryTab(ttk.Frame):
 
         ttk.Label(info_row, text=f"{views:,} views • {date_formatted}", font=("Segoe UI", 8), bootstyle="light").pack(
             side=LEFT)
-        status_sym = "✅" if video.get("is_downloaded") else "🌐"
-        ttk.Label(info_row, text=status_sym, font=("Segoe UI", 10)).pack(side=RIGHT)
 
-        btn_row = ttk.Frame(card, bootstyle="secondary")
+        status_label = ttk.Label(info_row)
+        status_label.pack(side=RIGHT)
+
+        if self.has_icon_font:
+            status_label.config(font=("Material Symbols Rounded", 20))
+            if video.get("is_downloaded"):
+                status_label.config(text="data_check", bootstyle="success")
+            elif video.get("is_metadata_downloaded"):
+                status_label.config(text="data_info_alert", bootstyle="warning")
+            else:
+                status_label.config(text="captive_portal", bootstyle="info")
+
+        btn_row = ttk.Frame(card, bootstyle="dark")
         btn_row.pack(side=TOP, fill=X, pady=(10, 0))
 
-        ttk.Button(
-            btn_row, text="Folder", bootstyle="outline",
-            command=lambda p=filepath_str: self.open_local_path(Path(p).parent if p else None)
-        ).pack(side=LEFT, padx=(0, 5))
+        if self.has_icon_font:
+            ttk.Button(btn_row, text="public", style="Icon.info.Outline.TButton",
+                       command=lambda u=video.get("url"): webbrowser.open(u) if u else None
+                       ).pack(side=LEFT, padx=(0, 5))
 
-        ttk.Button(
-            btn_row, text="Browser", bootstyle="outline",
-            command=lambda u=video.get("url"): webbrowser.open(u) if u else None
-        ).pack(side=LEFT, padx=5)
+            # --- NEW: Folder Button uses self.reveal_file ---
+            ttk.Button(btn_row, text="folder", style="Icon.warning.Outline.TButton",
+                       command=lambda p=filepath_str: self.reveal_file(p)
+                       ).pack(side=LEFT, padx=5)
 
-        ttk.Button(
-            btn_row, text="Play", bootstyle="outline",
-            command=lambda p=filepath_str: self.play_video(p)
-        ).pack(side=LEFT, padx=5)
+            ttk.Button(btn_row, text="play_arrow", style="Icon.success.Outline.TButton",
+                       command=lambda p=filepath_str: self.play_video(p)
+                       ).pack(side=LEFT, padx=5)
+
+        else:
+            ttk.Button(btn_row, text="Browser", bootstyle="info-outline",
+                       command=lambda u=video.get("url"): webbrowser.open(u) if u else None
+                       ).pack(side=LEFT, padx=(0, 5))
+
+            # --- NEW: Fallback Folder Button uses self.reveal_file ---
+            ttk.Button(btn_row, text="Folder", bootstyle="warning-outline",
+                       command=lambda p=filepath_str: self.reveal_file(p)
+                       ).pack(side=LEFT, padx=5)
+
+            ttk.Button(btn_row, text="Play", bootstyle="success-outline",
+                       command=lambda p=filepath_str: self.play_video(p)
+                       ).pack(side=LEFT, padx=5)
+
+    @staticmethod
+    def reveal_file(filepath_str):
+        """Opens File Explorer and explicitly highlights the .info.json file."""
+        if not filepath_str:
+            Messagebox.show_warning("Not Found", "Video file not found in database.")
+            return
+
+        # Smart fallback priority: .info.json -> .webp -> The parent folder itself
+        target = Path(f"{filepath_str}.info.json")
+        if not target.exists():
+            target = Path(f"{filepath_str}.webp")
+            if not target.exists():
+                target = Path(filepath_str).parent
+
+        if not target.exists():
+            Messagebox.show_warning("Not Found", "Files have not been downloaded yet.")
+            return
+
+        # Native OS commands to highlight the specific file
+        if sys.platform.startswith("win"):
+            if target.is_file():
+                subprocess.run(["explorer", "/select,", str(target)])
+            else:
+                os.startfile(target)
+        elif sys.platform == "darwin":
+            if target.is_file():
+                subprocess.run(["open", "-R", str(target)])
+            else:
+                subprocess.run(["open", str(target)])
+        else:
+            # Linux fallback (opens the parent folder)
+            subprocess.run(["xdg-open", str(target.parent if target.is_file() else target)])
 
     @staticmethod
     def open_local_path(path):
+        """Standard method to just launch a file in its default app (used by Play button)."""
         if not path or not path.exists():
-            Messagebox.show_warning("Not Found", "Folder does not exist yet. You might need to download files first.")
+            Messagebox.show_warning("Not Found", "File does not exist yet.")
             return
         if sys.platform.startswith("win"):
             os.startfile(path)
@@ -250,7 +318,7 @@ class LibraryTab(ttk.Frame):
         if dir_path.exists():
             for file in dir_path.glob(name_pattern):
                 if file.suffix.lower() in ['.mp4', '.mkv', '.webm', '.avi', '.mov']:
-                    self.open_local_path(file)
+                    self.open_local_path(file)  # This launches the actual video player
                     return
 
         Messagebox.show_warning("Not Found", "Video media file not found on disk.\nHave you downloaded it yet?")
@@ -270,6 +338,6 @@ class LibraryTab(ttk.Frame):
                 label.config(image=photo, text="")
                 label.image = photo
         except Exception as e:
-            print(f"Failed to load thumbnail from {path}: {e}")
+            pass
 
         self.after(5, self.process_image_queue)

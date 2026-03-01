@@ -8,7 +8,7 @@ theme = ThemeDefinition(
         "secondary": "#313131",
         "success": "#77b300",
         "info": "#2a9fd6",
-        "warning": "#ff8800",
+        "warning": "#f6ff00",
         "danger": "#ff0909",
         "light": "#ffffff",
         "dark": "#000000",

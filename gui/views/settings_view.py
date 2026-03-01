@@ -59,12 +59,6 @@ class SettingsView(ttk.Notebook):
             command=self.on_start_with_system_change,
         ).pack(anchor="w", padx=20, pady=(15, 0))
 
-        ttk.Button(
-            self.general,
-            text="Open data folder",
-            command=self.settings.open_data_folder
-        ).pack(anchor="w", padx=20, pady=5)
-
         ttk.Checkbutton(
             self.general,
             text="Close to tray instead of exiting",
@@ -72,6 +66,13 @@ class SettingsView(ttk.Notebook):
             command=lambda: self.settings.set_close_to_tray(
                 self.close_to_tray_var.get()
             )
+        ).pack(anchor="w", padx=20, pady=5)
+
+        ttk.Button(
+            self.general,
+            text="Open data folder",
+            bootstyle="outline",
+            command=self.settings.open_data_folder
         ).pack(anchor="w", padx=20, pady=5)
 
     def on_theme_change(self, _event):

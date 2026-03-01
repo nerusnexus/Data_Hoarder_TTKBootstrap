@@ -57,10 +57,10 @@ class MetadataWorkerCard(ttk.Frame):
         self.destroy()
 
     def update_log(self, message):
-        self.log_text.config(state=NORMAL)
+        self.log_text.config(state="normal")
         self.log_text.insert(END, f"{message}\n")
         self.log_text.see(END)
-        self.log_text.config(state=DISABLED)
+        self.log_text.config(state="disabled")
 
     def update_ui_state(self, title=None, progress=None, status=None, bar_val=None):
         if title: self.title_label.config(text=title)
@@ -82,6 +82,9 @@ class DlpFetchMetadataTab(ttk.Frame):
         self.worker_container = None
         self.tree = None
         self.queue_scroll = None
+        self.start_btn = None
+        self.mode_var = None
+        self.cookie_var = None
         self.selected_items_list = []
         self.params = {}
         self.combos = {}
@@ -175,11 +178,8 @@ class DlpFetchMetadataTab(ttk.Frame):
             self.params[label] = var
             self.combos[label] = cb
 
-        self.start_btn = ttk.Button(config_outer, text="START FETCHING", bootstyle="success",
-                                    command=self.start_process)
+        self.start_btn = ttk.Button(config_outer, text="Start Fetching", bootstyle="success-outline", command=self.start_process)
         self.start_btn.pack(fill=X, pady=10)
-
-        # --- NEW: Replaced PanedWindow with a standard frame ---
         self.worker_container = ttk.Labelframe(self.main_scroll, text="Active Workers")
         self.worker_container.pack(fill=BOTH, expand=True, padx=10, pady=10)
 
