@@ -10,7 +10,7 @@ from pathlib import Path
 from PIL import Image, ImageTk, ImageOps
 from gui.dialogs.add_group_dialog import AddGroupDialog
 from gui.dialogs.add_channel_dialog import AddChannelDialog
-from config import FONTS_DIR, METADATA_DIR
+from config import FONTS_DIR, METADATA_DIR, VIDEOS_DIR  # <-- Added VIDEOS_DIR
 
 
 def format_number(num):
@@ -141,10 +141,13 @@ class ManageSubsTab(ttk.Frame):
         handle = channel_info.get("handle", "")
         safe_handle = handle if handle.startswith('@') else f"@{handle}"
         folder_name = f"{cid} ({handle})" if handle and handle != cid else cid
-        local_path = METADATA_DIR / folder_name
 
-        profile_img_path = local_path / "profile.jpg"
-        banner_img_path = local_path / "banner.jpg"
+        local_metadata_path = METADATA_DIR / folder_name
+        local_videos_path = VIDEOS_DIR / folder_name  # For the button to open
+
+        # --- UPDATED: Look for the newly named images ---
+        profile_img_path = local_metadata_path / f"profile ({safe_handle}).jpg"
+        banner_img_path = local_metadata_path / f"banner ({safe_handle}).jpg"
 
         # --- LEFT SIDE: Profile Picture ---
         left_container = ttk.Frame(card, bootstyle="dark")
@@ -189,9 +192,8 @@ class ManageSubsTab(ttk.Frame):
         content_frame = ttk.Frame(right_container, bootstyle="dark")
         content_frame.pack(side="top", fill="both", expand=True, pady=(10, 0))
 
-        content_frame.columnconfigure(0, weight=5, uniform="content_cols")
-        content_frame.columnconfigure(1, weight=5, uniform="content_cols")
-        content_frame.columnconfigure(2, weight=2, uniform="content_cols")
+        content_frame.columnconfigure(0, weight=1, uniform="content_cols")
+        content_frame.columnconfigure(1, weight=1, uniform="content_cols")
 
         name = channel_info.get("name", "Unknown")
         url = channel_info.get("url", "")
@@ -224,69 +226,32 @@ class ManageSubsTab(ttk.Frame):
         btn_frame = ttk.Frame(stats_frame, bootstyle="dark")
         btn_frame.pack(anchor="w")
 
+        # --- UPDATED: The Folder buttons now open the VIDEOS_DIR path instead of Metadata! ---
         if self.has_icon_font:
             ttk.Button(btn_frame, text="public", style="Icon.TButton", bootstyle="outline-light",
                        command=lambda u=url: webbrowser.open(u)).pack(side="left", padx=(0, 5))
             ttk.Button(btn_frame, text="folder", style="Icon.TButton", bootstyle="outline-light",
-                       command=lambda p=local_path: self.open_local_path(p)).pack(side="left")
+                       command=lambda p=local_videos_path: self.open_local_path(p)).pack(side="left")
         else:
             ttk.Button(btn_frame, text="Web", bootstyle="outline-light", command=lambda u=url: webbrowser.open(u)).pack(
                 side="left", padx=(0, 5))
             ttk.Button(btn_frame, text="Dir", bootstyle="outline-light",
-                       command=lambda p=local_path: self.open_local_path(p)).pack(side="left")
+                       command=lambda p=local_videos_path: self.open_local_path(p)).pack(side="left")
 
         # ====== COLUMN 2: DESCRIPTION ======
         desc_frame = ttk.Frame(content_frame, bootstyle="dark")
-        desc_frame.grid(row=0, column=1, sticky="nsew", padx=10)
+        desc_frame.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
 
         ttk.Label(desc_frame, text="Description:", font=("Segoe UI", 9, "bold"), bootstyle="light").pack(anchor="w",
                                                                                                          pady=(0, 2))
 
         desc_str = channel_info.get("description") or "No description available."
 
-        # Locked description height
         desc_text = ttk.Text(desc_frame, height=4, wrap="word", font=("Segoe UI", 8), background="#222",
                              foreground="#eee", borderwidth=0, highlightthickness=0)
         desc_text.pack(fill="x", pady=2)
         desc_text.insert("1.0", desc_str)
         desc_text.configure(state="disabled")
-
-        # ====== COLUMN 3: LINKS ======
-        links_frame = ttk.Frame(content_frame, bootstyle="dark")
-        links_frame.grid(row=0, column=2, sticky="nsew", padx=(10, 0))
-
-        ttk.Label(links_frame, text="Links:", font=("Segoe UI", 9, "bold"), bootstyle="light").pack(anchor="w",
-                                                                                                    pady=(0, 2))
-
-        links_scroll = ScrolledFrame(links_frame, autohide=True)
-        links_scroll.pack(fill="both", expand=True)
-
-        links_json_str = channel_info.get("links", "[]")
-        try:
-            links = json.loads(links_json_str) if links_json_str else []
-        except:
-            links = []
-
-        if links:
-            for link in links:
-                if isinstance(link, str):
-                    l_title = link.split("://")[-1].split("/")[0]
-                    l_url = link
-                else:
-                    l_title = link.get("title") or link.get("url", "Link")
-                    l_url = link.get("url") or ""
-
-                if len(l_title) > 20:
-                    l_title = l_title[:17] + "..."
-
-                if l_url:
-                    lbl = ttk.Label(links_scroll, text=f"🔗 {l_title}", font=("Segoe UI", 8, "underline"),
-                                    bootstyle="info", cursor="hand2")
-                    lbl.pack(anchor="w", pady=1)
-                    lbl.bind("<Button-1>", lambda e, u=l_url: webbrowser.open(u))
-        else:
-            ttk.Label(links_scroll, text="No external links.", font=("Segoe UI", 8, "italic"),
-                      bootstyle="secondary").pack(anchor="w")
 
     @staticmethod
     def open_local_path(path):

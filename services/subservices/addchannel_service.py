@@ -5,7 +5,8 @@ import re
 import traceback
 import typing
 import urllib.request
-from config import METADATA_DIR
+from urllib.error import HTTPError
+from config import METADATA_DIR, VIDEOS_DIR
 from services.db.db_manager import DatabaseManager
 from yt_dlp.utils import DownloadError
 
@@ -16,10 +17,11 @@ def sanitize_filename(name):
 
 
 class AddChannelService:
-    def __init__(self, ytdlp=None, settings=None):  # <-- NEW: Accepts settings
+    def __init__(self, ytdlp=None, settings=None):
         self.ytdlp = ytdlp
         self.settings = settings
         self.metadata_folder = METADATA_DIR
+        self.videos_folder = VIDEOS_DIR
 
     @staticmethod
     def get_connection():
@@ -58,6 +60,45 @@ class AddChannelService:
             conn.execute("DELETE FROM channels WHERE name = ?", (channel_name,))
             conn.commit()
 
+    # --- NEW: Ultra-fast OEmbed Lost Media Checker ---
+    def check_videos_online_status(self, videos, progress_callback=None):
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            total = len(videos)
+
+            for i, video in enumerate(videos):
+                video_url = video.get("url")
+                video_id = video.get("video_id")
+
+                if not video_url:
+                    if video_id:
+                        video_url = f"https://www.youtube.com/watch?v={video_id}"
+                    else:
+                        continue
+
+                # Fast oEmbed check (Takes ~0.1 seconds per video instead of 2 seconds)
+                oembed_url = f"https://www.youtube.com/oembed?url={video_url}&format=json"
+                is_lost = 0  # Default assume online
+
+                try:
+                    req = urllib.request.Request(oembed_url, headers={'User-Agent': 'Mozilla/5.0'})
+                    urllib.request.urlopen(req)
+                except HTTPError as e:
+                    # 404 = Deleted/Not Found, 401 = Privated
+                    if e.code in [401, 404]:
+                        is_lost = 1
+                except Exception:
+                    pass  # Network error/Timeout, leave as 0 to prevent false "Lost Media" flags
+
+                cursor.execute("UPDATE videos SET is_lost_media = ? WHERE video_id = ?", (is_lost, video_id))
+
+                if progress_callback:
+                    progress_callback(i + 1, total)
+
+            conn.commit()
+
+    # -------------------------------------------------
+
     def fetch_channel_info(self, url, group, progress_callback=None):
         url = url.strip()
 
@@ -76,7 +117,7 @@ class AddChannelService:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:  # type: ignore
             try:
                 if progress_callback:
-                    progress_callback("Fetching channel metadata...")
+                    progress_callback("Fetching channel metadata via yt-dlp...")
 
                 raw_info = ydl.extract_info(url, download=False)
                 info = dict(raw_info) if raw_info else {}
@@ -94,15 +135,14 @@ class AddChannelService:
                 tags_json = json.dumps(info.get("tags", []))
                 chan_thumbnails_json = json.dumps(info.get("thumbnails", []))
 
-                # Default fallbacks
                 creation_date = info.get("channel_joined", "")
                 country = info.get("channel_country", "Unknown")
                 channel_view_count = info.get("channel_view_count", 0)
                 description = info.get("description", "")
                 links_json = json.dumps(info.get("links", []))
 
-                # --- NEW: Retrieve API key securely from local settings ---
                 api_key = self.settings.get_youtube_api_key() if self.settings else ""
+                api_data_full = None
 
                 if api_key and channel_id != "Unknown_ID":
                     if progress_callback: progress_callback("Pinging YouTube API for exact stats...")
@@ -110,13 +150,16 @@ class AddChannelService:
                     try:
                         req = urllib.request.Request(api_url)
                         with urllib.request.urlopen(req) as response:
-                            api_data = json.loads(response.read().decode())
-                            if api_data.get("items"):
-                                item = api_data["items"][0]
+                            api_data_full = json.loads(response.read().decode())
+
+                            if self.settings:
+                                self.settings.increment_quota_usage()
+
+                            if api_data_full.get("items"):
+                                item = api_data_full["items"][0]
                                 snippet = item.get("snippet", {})
                                 stats = item.get("statistics", {})
 
-                                # API Date Format: "2009-07-23T00:46:17Z" -> Convert to "20090723"
                                 pub_date = snippet.get("publishedAt", "")
                                 if pub_date:
                                     creation_date = pub_date[:10].replace("-", "")
@@ -124,15 +167,13 @@ class AddChannelService:
                                 country = snippet.get("country", country)
                                 channel_view_count = int(stats.get("viewCount", channel_view_count))
                                 description = snippet.get("description", description)
-
-                                # Inject back into JSON dictionary
-                                info["channel_joined"] = creation_date
-                                info["channel_country"] = country
-                                info["channel_view_count"] = channel_view_count
-                                info["description"] = description
                     except Exception as e:
                         print(f"API Error: {e}")
-                # ----------------------------------------------------------
+
+                info["channel_joined"] = creation_date
+                info["channel_country"] = country
+                info["channel_view_count"] = channel_view_count
+                info["description"] = description
 
                 with self.get_connection() as conn:
                     cursor = conn.cursor()
@@ -167,8 +208,17 @@ class AddChannelService:
                     total = len(all_videos)
 
                     folder_name = f"{channel_id} ({handle})" if handle and handle != "Unknown_Handle" else channel_id
-                    channel_folder = self.metadata_folder / folder_name
-                    channel_folder.mkdir(parents=True, exist_ok=True)
+
+                    channel_metadata_folder = self.metadata_folder / folder_name
+                    channel_metadata_folder.mkdir(parents=True, exist_ok=True)
+
+                    channel_videos_folder = self.videos_folder / folder_name
+                    channel_videos_folder.mkdir(parents=True, exist_ok=True)
+
+                    for v_type in ["Videos", "Shorts", "Lives"]:
+                        subfolder_name = f"({safe_handle}) {v_type}"
+                        (channel_metadata_folder / subfolder_name).mkdir(parents=True, exist_ok=True)
+                        (channel_videos_folder / subfolder_name).mkdir(parents=True, exist_ok=True)
 
                     thumbnails = info.get("thumbnails", [])
                     avatar_url = None
@@ -188,7 +238,8 @@ class AddChannelService:
                     if avatar_url:
                         try:
                             req = urllib.request.Request(avatar_url, headers=req_headers)
-                            with urllib.request.urlopen(req) as resp, open(channel_folder / "profile.jpg", 'wb') as f:
+                            with urllib.request.urlopen(req) as resp, open(
+                                    channel_metadata_folder / f"profile ({safe_handle}).jpg", 'wb') as f:
                                 f.write(resp.read())
                         except Exception:
                             pass
@@ -196,7 +247,8 @@ class AddChannelService:
                     if banner_url:
                         try:
                             req = urllib.request.Request(banner_url, headers=req_headers)
-                            with urllib.request.urlopen(req) as resp, open(channel_folder / "banner.jpg", 'wb') as f:
+                            with urllib.request.urlopen(req) as resp, open(
+                                    channel_metadata_folder / f"banner ({safe_handle}).jpg", 'wb') as f:
                                 f.write(resp.read())
                         except Exception:
                             pass
@@ -225,21 +277,23 @@ class AddChannelService:
                         thumbnails_json = json.dumps(video_entry.get("thumbnails", []))
 
                         subfolder_name = f"({safe_handle}) {v_type}"
-                        video_folder = channel_folder / subfolder_name
-                        video_folder.mkdir(parents=True, exist_ok=True)
+
+                        meta_subfolder = channel_metadata_folder / subfolder_name
+                        video_subfolder = channel_videos_folder / subfolder_name
 
                         clean_title = sanitize_filename(title)
                         expected_filename_base = f"{upload_date}_{clean_title}"
-                        filepath_base = video_folder / expected_filename_base
+
+                        filepath_base = video_subfolder / expected_filename_base
 
                         is_downloaded = 0
                         for ext in ['.mp4', '.mkv', '.webm', '.avi', '.mov']:
-                            if (video_folder / f"{expected_filename_base}{ext}").exists():
+                            if (video_subfolder / f"{expected_filename_base}{ext}").exists():
                                 is_downloaded = 1
                                 break
 
                         is_metadata_downloaded = 1 if (
-                                    video_folder / f"{expected_filename_base}.info.json").exists() else 0
+                                    meta_subfolder / f"{expected_filename_base}.info.json").exists() else 0
 
                         cursor.execute("SELECT id FROM videos WHERE video_id = ? AND channel_name = ?",
                                        (video_id, channel_name))
@@ -262,15 +316,18 @@ class AddChannelService:
                     conn.commit()
 
                 if handle and handle != "Unknown_Handle":
-                    filename = f"{channel_id}_({safe_handle}).json"
+                    base_filename = f"{channel_id}_({safe_handle})"
                 else:
-                    filename = f"{channel_id}.json"
+                    base_filename = f"{channel_id}"
 
-                save_path = channel_folder / filename
-                save_path.parent.mkdir(parents=True, exist_ok=True)
-
-                with open(save_path, "w", encoding="utf-8") as f:
+                ytdlp_save_path = channel_metadata_folder / f"{base_filename}.json"
+                with open(ytdlp_save_path, "w", encoding="utf-8") as f:
                     json.dump(info, f, indent=4)
+
+                if api_data_full:
+                    api_save_path = channel_metadata_folder / f"{base_filename}_yt_data.json"
+                    with open(api_save_path, "w", encoding="utf-8") as f:
+                        json.dump(api_data_full, f, indent=4)
 
                 return True, f"Successfully added {channel_name}"
 

@@ -2,8 +2,10 @@ import json
 import os
 import sys
 import subprocess
+import datetime
 from pathlib import Path
 from config import SETTINGS_PATH, DATA_DIR
+
 
 class SettingsService:
     def __init__(self, style_instance=None):
@@ -13,7 +15,9 @@ class SettingsService:
             "theme": "darkly",
             "close_to_tray": False,
             "start_with_system": False,
-            "youtube_api_key": ""
+            "youtube_api_key": "",
+            "quota_date": "",
+            "quota_used": 0
         }
         self.settings = self.load_settings()
 
@@ -70,4 +74,30 @@ class SettingsService:
 
     def set_youtube_api_key(self, key):
         self.settings["youtube_api_key"] = key
+        self.save_settings(self.settings)
+
+    # --- NEW: Quota Tracking Methods ---
+    def get_remaining_quota(self):
+        today = datetime.date.today().isoformat()
+        saved_date = self.settings.get("quota_date", "")
+
+        # If it's a new day, reset the counter
+        if saved_date != today:
+            self.settings["quota_date"] = today
+            self.settings["quota_used"] = 0
+            self.save_settings(self.settings)
+
+        used = self.settings.get("quota_used", 0)
+        return max(0, 10000 - used)
+
+    def increment_quota_usage(self):
+        today = datetime.date.today().isoformat()
+        saved_date = self.settings.get("quota_date", "")
+
+        if saved_date != today:
+            self.settings["quota_date"] = today
+            self.settings["quota_used"] = 1
+        else:
+            self.settings["quota_used"] = self.settings.get("quota_used", 0) + 1
+
         self.save_settings(self.settings)

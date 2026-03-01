@@ -6,10 +6,8 @@ class SettingsView(ttk.Notebook):
     def __init__(self, parent, settings_service, theme_changer):
         super().__init__(parent)
 
-        # Save the injected services
         self.settings = settings_service
         self.change_theme_func = theme_changer
-
         self.style = ttk.Style.get_instance()
 
         self.general = ttk.Frame(self)
@@ -32,7 +30,6 @@ class SettingsView(ttk.Notebook):
         self.build_database_tab()
 
     def build_general_tab(self):
-        # --- Theme ---
         ttk.Label(
             self.general, text="Theme"
         ).pack(anchor="w", padx=20, pady=(10, 0))
@@ -49,7 +46,6 @@ class SettingsView(ttk.Notebook):
         theme_combo.pack(anchor="w", padx=20, pady=5)
         theme_combo.bind("<<ComboboxSelected>>", self.on_theme_change)
 
-        # --- Start with system ---
         self.start_var = ttk.BooleanVar(
             value=self.settings.get_start_with_system()
         )
@@ -86,7 +82,6 @@ class SettingsView(ttk.Notebook):
         )
 
     def build_ytdlp_tab(self):
-        # --- YouTube API Key UI ---
         ttk.Label(self.ytdlp, text="YouTube Data API v3 Key:").pack(anchor="w", padx=20, pady=(10, 0))
 
         api_frame = ttk.Frame(self.ytdlp)
@@ -97,6 +92,16 @@ class SettingsView(ttk.Notebook):
         api_entry.pack(side="left", padx=(0, 10))
 
         ttk.Button(api_frame, text="Save Key", bootstyle="success", command=self.on_api_key_saved).pack(side="left")
+
+        # --- NEW: Quota Tracker Label ---
+        remaining = self.settings.get_remaining_quota()
+        self.quota_label = ttk.Label(
+            self.ytdlp,
+            text=f"Estimated quota remaining today: {remaining:,} / 10,000 requests",
+            font=("Segoe UI", 8, "italic"),
+            bootstyle="secondary"
+        )
+        self.quota_label.pack(anchor="w", padx=22, pady=(0, 5))
 
     def build_database_tab(self):
         pass

@@ -8,6 +8,7 @@ import webbrowser
 import os
 import sys
 import subprocess
+import threading
 from config import METADATA_DIR, FONTS_DIR
 
 
@@ -42,14 +43,12 @@ class LibraryTab(ttk.Frame):
         self.winfo_toplevel().bind("<<DataUpdated>>", self.refresh_tree, add="+")
 
     def build_ui(self):
-        # --- SIDEBAR REDESIGN ---
         sidebar = ttk.Frame(self, width=280)
         sidebar.pack(side=LEFT, fill=Y, padx=5, pady=5)
         sidebar.pack_propagate(False)
 
         ttk.Label(sidebar, text="Channels", font=("Segoe UI", 10, "bold")).pack(pady=5)
 
-        # Scrollable Treeview
         tree_frame = ttk.Frame(sidebar)
         tree_frame.pack(fill=BOTH, expand=True, pady=(0, 10))
 
@@ -61,8 +60,6 @@ class LibraryTab(ttk.Frame):
         tree_scroll.config(command=self.tree.yview)
         self.tree.bind("<<TreeviewSelect>>", self.on_channel_selected)
 
-        # Controls under treeview
-        # FIXED: Changed LabelFrame to Labelframe
         controls_frame = ttk.Labelframe(sidebar, text="Filters & Sorting", padding=10)
         controls_frame.pack(fill=X, side=BOTTOM, pady=5)
 
@@ -82,7 +79,14 @@ class LibraryTab(ttk.Frame):
         order_cb.pack(fill=X)
         order_cb.bind("<<ComboboxSelected>>", self.on_sort_changed)
 
-        # --- MAIN CONTENT FULL WIDH ---
+        self.check_status_btn = ttk.Button(controls_frame, text="Check online status", bootstyle="info",
+                                           command=self.start_online_check)
+        self.check_status_btn.pack(fill=X, pady=(15, 0))
+
+        self.check_progress_var = ttk.DoubleVar()
+        self.check_progress = ttk.Progressbar(controls_frame, variable=self.check_progress_var, maximum=100,
+                                              bootstyle="success")
+
         main_content = ttk.Frame(self)
         main_content.pack(side=RIGHT, fill=BOTH, expand=True)
 
@@ -228,14 +232,37 @@ class LibraryTab(ttk.Frame):
         status_label = ttk.Label(info_row)
         status_label.pack(side=RIGHT)
 
+        online_status_label = ttk.Label(info_row)
+        online_status_label.pack(side=RIGHT, padx=(0, 5))
+
         if self.has_icon_font:
             status_label.config(font=("Material Symbols Rounded", 16))
+            online_status_label.config(font=("Material Symbols Rounded", 16))
+
             if video.get("is_downloaded"):
                 status_label.config(text="data_check", bootstyle="success")
             elif video.get("is_metadata_downloaded"):
                 status_label.config(text="data_info_alert", bootstyle="warning")
             else:
                 status_label.config(text="captive_portal", bootstyle="info")
+
+            is_lost = video.get("is_lost_media")
+            # --- UPDATED: Unchecked / Warning state ---
+            if is_lost == 1:
+                online_status_label.config(text="cloud_alert", bootstyle="danger")
+            elif is_lost == 0:
+                online_status_label.config(text="cloud_done", bootstyle="success")
+            else:
+                online_status_label.config(text="cloud_sync", bootstyle="warning")
+            # ------------------------------------------
+        else:
+            is_lost = video.get("is_lost_media")
+            if is_lost == 1:
+                online_status_label.config(text="[Lost]", bootstyle="danger")
+            elif is_lost == 0:
+                online_status_label.config(text="[Online]", bootstyle="success")
+            else:
+                online_status_label.config(text="[Unchecked]", bootstyle="warning")
 
         btn_row = ttk.Frame(card, bootstyle="dark")
         btn_row.pack(side=TOP, fill=X, pady=(10, 0))
@@ -265,6 +292,35 @@ class LibraryTab(ttk.Frame):
             ttk.Button(btn_row, text="Play", bootstyle="success-outline",
                        command=lambda p=filepath_str: self.play_video(p)
                        ).pack(side=LEFT, padx=5)
+
+    def start_online_check(self):
+        if not self.current_videos:
+            return
+
+        self.check_status_btn.config(state="disabled", text="Checking...")
+        self.check_progress.pack(fill=X, pady=(5, 0))
+        self.check_progress_var.set(0)
+
+        threading.Thread(target=self._run_online_check, daemon=True).start()
+
+    def _run_online_check(self):
+        def update_progress(current, total):
+            pct = (current / total) * 100
+            self.winfo_toplevel().after(0, self.check_progress_var.set, pct)
+
+        self.add_channel_service.check_videos_online_status(self.current_videos, progress_callback=update_progress)
+
+        self.winfo_toplevel().after(0, self._finish_online_check)
+
+    def _finish_online_check(self):
+        self.check_progress.pack_forget()
+        self.check_status_btn.config(state="normal", text="Check online status")
+
+        selected = self.tree.selection()
+        if selected:
+            channel_name = self.tree.item(selected[0])["text"]
+            self.current_videos = self.add_channel_service.get_videos_by_channel(channel_name)
+            self.apply_filters_and_render()
 
     @staticmethod
     def reveal_file(filepath_str):
