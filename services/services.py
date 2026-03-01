@@ -5,6 +5,7 @@ from services.subservices.addgroup_service import AddGroupService
 from services.subservices.addchannel_service import AddChannelService
 from services.subservices.fetchmetadata_service import FetchMetadataService # NEW
 from services.db.database_initializer import initialize_database
+from services.subservices.dlp_download_service import DlpDownloadService
 
 
 class AppServices:
@@ -20,7 +21,8 @@ class AppServices:
         self.account = AccountService()
         self.add_group = AddGroupService()
         self.add_channel = AddChannelService(self.ytdlp)
-        self.fetch_metadata = FetchMetadataService() # NEW
+        self.fetch_metadata = FetchMetadataService()
+        self.dlp_download_service = DlpDownloadService()
 
     def get_available_themes(self):
         return self.style.theme_names()

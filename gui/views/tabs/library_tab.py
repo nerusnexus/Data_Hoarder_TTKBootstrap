@@ -33,7 +33,6 @@ class LibraryTab(ttk.Frame):
         self.has_icon_font = (FONTS_DIR / "MaterialSymbolsRounded.ttf").exists()
         if self.has_icon_font:
             style = ttk.Style()
-            # Generate an Icon Outline style for every bootstyle color!
             for color in ["primary", "secondary", "success", "info", "warning", "danger", "light", "dark"]:
                 style.configure(f"Icon.{color}.Outline.TButton", font=("Material Symbols Rounded", 16))
 
@@ -43,41 +42,52 @@ class LibraryTab(ttk.Frame):
         self.winfo_toplevel().bind("<<DataUpdated>>", self.refresh_tree, add="+")
 
     def build_ui(self):
-        sidebar = ttk.Frame(self, width=290)
+        # --- SIDEBAR REDESIGN ---
+        sidebar = ttk.Frame(self, width=280)
         sidebar.pack(side=LEFT, fill=Y, padx=5, pady=5)
         sidebar.pack_propagate(False)
 
         ttk.Label(sidebar, text="Channels", font=("Segoe UI", 10, "bold")).pack(pady=5)
-        self.tree = ttk.Treeview(sidebar, show="tree")
-        self.tree.pack(fill=BOTH, expand=True)
+
+        # Scrollable Treeview
+        tree_frame = ttk.Frame(sidebar)
+        tree_frame.pack(fill=BOTH, expand=True, pady=(0, 10))
+
+        tree_scroll = ttk.Scrollbar(tree_frame, orient=VERTICAL)
+        tree_scroll.pack(side=RIGHT, fill=Y)
+
+        self.tree = ttk.Treeview(tree_frame, show="tree", yscrollcommand=tree_scroll.set)
+        self.tree.pack(side=LEFT, fill=BOTH, expand=True)
+        tree_scroll.config(command=self.tree.yview)
         self.tree.bind("<<TreeviewSelect>>", self.on_channel_selected)
 
+        # Controls under treeview
+        # FIXED: Changed LabelFrame to Labelframe
+        controls_frame = ttk.Labelframe(sidebar, text="Filters & Sorting", padding=10)
+        controls_frame.pack(fill=X, side=BOTTOM, pady=5)
+
+        ttk.Label(controls_frame, text="Search:").pack(anchor=W)
+        search_entry = ttk.Entry(controls_frame, textvariable=self.search_var)
+        search_entry.pack(fill=X, pady=(0, 10))
+        search_entry.bind("<KeyRelease>", self.on_search_typing)
+
+        ttk.Label(controls_frame, text="Sort by:").pack(anchor=W)
+        sort_cb = ttk.Combobox(controls_frame, textvariable=self.sort_by_var, values=["Date", "Views", "Title"],
+                               state="readonly")
+        sort_cb.pack(fill=X, pady=(0, 5))
+        sort_cb.bind("<<ComboboxSelected>>", self.on_sort_changed)
+
+        order_cb = ttk.Combobox(controls_frame, textvariable=self.sort_order_var, values=["Ascending", "Descending"],
+                                state="readonly")
+        order_cb.pack(fill=X)
+        order_cb.bind("<<ComboboxSelected>>", self.on_sort_changed)
+
+        # --- MAIN CONTENT FULL WIDH ---
         main_content = ttk.Frame(self)
         main_content.pack(side=RIGHT, fill=BOTH, expand=True)
 
         self.library_label = ttk.Label(main_content, text="Select a channel to view library", font=("Segoe UI", 12))
         self.library_label.pack(pady=(10, 5))
-
-        controls_frame = ttk.Frame(main_content)
-        controls_frame.pack(fill=X, padx=10, pady=5)
-
-        ttk.Label(controls_frame, text="Search:").pack(side=LEFT, padx=(0, 5))
-        search_entry = ttk.Entry(controls_frame, textvariable=self.search_var, width=30)
-        search_entry.pack(side=LEFT)
-        search_entry.bind("<KeyRelease>", self.on_search_typing)
-
-        ttk.Frame(controls_frame).pack(side=LEFT, fill=X, expand=True)
-
-        order_cb = ttk.Combobox(controls_frame, textvariable=self.sort_order_var, values=["Ascending", "Descending"],
-                                state="readonly", width=10)
-        order_cb.pack(side=RIGHT, padx=5)
-        order_cb.bind("<<ComboboxSelected>>", self.on_sort_changed)
-
-        ttk.Label(controls_frame, text="Sort by:").pack(side=RIGHT, padx=(10, 5))
-        sort_cb = ttk.Combobox(controls_frame, textvariable=self.sort_by_var, values=["Date", "Views", "Title"],
-                               state="readonly", width=10)
-        sort_cb.pack(side=RIGHT)
-        sort_cb.bind("<<ComboboxSelected>>", self.on_sort_changed)
 
         self.notebook = ttk.Notebook(main_content)
         self.notebook.pack(fill=BOTH, expand=True, padx=10, pady=10)
@@ -164,11 +174,9 @@ class LibraryTab(ttk.Frame):
             self.process_image_queue()
 
     def create_video_card(self, parent, video, thumb_dir, row, col):
-        # Outer frame acts as the white outline
         border_frame = ttk.Frame(parent, bootstyle="light")
         border_frame.grid(row=row, column=col, padx=10, pady=10, sticky="nsew")
 
-        # Inner frame is the black card. The 1px padding leaves a perfect white outline showing through!
         card = ttk.Frame(border_frame, padding=10, bootstyle="dark")
         card.pack(fill=BOTH, expand=True, padx=1, pady=1)
 
@@ -193,7 +201,7 @@ class LibraryTab(ttk.Frame):
                 thumb_path = cand
                 break
 
-        img_label = ttk.Label(card, text="[No Thumbnail]", bootstyle="light", anchor=CENTER)
+        img_label = ttk.Label(card, text="[No Thumbnail]", bootstyle="inverse-secondary", anchor=CENTER)
         img_label.pack(side=TOP, fill=X)
 
         if thumb_path:
@@ -221,7 +229,7 @@ class LibraryTab(ttk.Frame):
         status_label.pack(side=RIGHT)
 
         if self.has_icon_font:
-            status_label.config(font=("Material Symbols Rounded", 20))
+            status_label.config(font=("Material Symbols Rounded", 16))
             if video.get("is_downloaded"):
                 status_label.config(text="data_check", bootstyle="success")
             elif video.get("is_metadata_downloaded"):
@@ -237,7 +245,6 @@ class LibraryTab(ttk.Frame):
                        command=lambda u=video.get("url"): webbrowser.open(u) if u else None
                        ).pack(side=LEFT, padx=(0, 5))
 
-            # --- NEW: Folder Button uses self.reveal_file ---
             ttk.Button(btn_row, text="folder", style="Icon.warning.Outline.TButton",
                        command=lambda p=filepath_str: self.reveal_file(p)
                        ).pack(side=LEFT, padx=5)
@@ -251,7 +258,6 @@ class LibraryTab(ttk.Frame):
                        command=lambda u=video.get("url"): webbrowser.open(u) if u else None
                        ).pack(side=LEFT, padx=(0, 5))
 
-            # --- NEW: Fallback Folder Button uses self.reveal_file ---
             ttk.Button(btn_row, text="Folder", bootstyle="warning-outline",
                        command=lambda p=filepath_str: self.reveal_file(p)
                        ).pack(side=LEFT, padx=5)
@@ -262,12 +268,10 @@ class LibraryTab(ttk.Frame):
 
     @staticmethod
     def reveal_file(filepath_str):
-        """Opens File Explorer and explicitly highlights the .info.json file."""
         if not filepath_str:
             Messagebox.show_warning("Not Found", "Video file not found in database.")
             return
 
-        # Smart fallback priority: .info.json -> .webp -> The parent folder itself
         target = Path(f"{filepath_str}.info.json")
         if not target.exists():
             target = Path(f"{filepath_str}.webp")
@@ -278,7 +282,6 @@ class LibraryTab(ttk.Frame):
             Messagebox.show_warning("Not Found", "Files have not been downloaded yet.")
             return
 
-        # Native OS commands to highlight the specific file
         if sys.platform.startswith("win"):
             if target.is_file():
                 subprocess.run(["explorer", "/select,", str(target)])
@@ -290,12 +293,10 @@ class LibraryTab(ttk.Frame):
             else:
                 subprocess.run(["open", str(target)])
         else:
-            # Linux fallback (opens the parent folder)
             subprocess.run(["xdg-open", str(target.parent if target.is_file() else target)])
 
     @staticmethod
     def open_local_path(path):
-        """Standard method to just launch a file in its default app (used by Play button)."""
         if not path or not path.exists():
             Messagebox.show_warning("Not Found", "File does not exist yet.")
             return
@@ -318,7 +319,7 @@ class LibraryTab(ttk.Frame):
         if dir_path.exists():
             for file in dir_path.glob(name_pattern):
                 if file.suffix.lower() in ['.mp4', '.mkv', '.webm', '.avi', '.mov']:
-                    self.open_local_path(file)  # This launches the actual video player
+                    self.open_local_path(file)
                     return
 
         Messagebox.show_warning("Not Found", "Video media file not found on disk.\nHave you downloaded it yet?")

@@ -1,40 +1,39 @@
 import pystray
-from pystray import MenuItem as Item
-from pystray import Menu
-from PIL import Image
-import threading
+from PIL import Image, ImageDraw
+from config import DATABASE_ICON_PATH
 
 class TrayManager:
     def __init__(self, root):
         self.root = root
         self.icon = None
 
-    def _create_icon(self):
-        # Create a blank image placeholder for the icon
-        image = Image.new("RGB", (64, 64), color="black")
+    def create_image(self):
+        # --- NEW: Use custom icon if available ---
+        if DATABASE_ICON_PATH.exists():
+            try:
+                return Image.open(DATABASE_ICON_PATH)
+            except Exception:
+                pass
 
-        # Properly wrap the items inside a pystray Menu instance
-        menu = Menu(
-            Item("Open", self.show_window),
-            Item("Quit", self.quit_app)
-        )
+        # Fallback generated icon
+        image = Image.new('RGB', (64, 64), color=(20, 20, 20))
+        dc = ImageDraw.Draw(image)
+        dc.rectangle([16, 16, 48, 48], fill=(200, 50, 50))
+        return image
 
-        self.icon = pystray.Icon("DataHoarder", image, "Data Hoarder", menu)
-        self.icon.run()
+    def on_quit(self, icon, item):
+        self.icon.stop()
+        self.root.destroy()
+
+    def on_show(self, icon, item):
+        self.icon.stop()
+        self.root.after(0, self.root.deiconify)
 
     def show(self):
-        # Run the system tray icon on a background thread
-        threading.Thread(target=self._create_icon, daemon=True).start()
-
-    def show_window(self):
-        # Bring the main window back up and destroy the tray icon
-        self.root.after(0, self.root.deiconify)
-        if self.icon:
-            self.icon.stop()
-            self.icon = None
-
-    def quit_app(self):
-        # Close the tray and shut down the main loop completely
-        if self.icon:
-            self.icon.stop()
-        self.root.after(0, self.root.destroy)
+        image = self.create_image()
+        menu = pystray.Menu(
+            pystray.MenuItem('Show App', self.on_show, default=True),
+            pystray.MenuItem('Quit', self.on_quit)
+        )
+        self.icon = pystray.Icon("Data Hoarder", image, "Data Hoarder", menu)
+        self.icon.run()

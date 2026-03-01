@@ -3,6 +3,7 @@ from gui.views.tabs.managesubs_tab import ManageSubsTab
 from gui.views.tabs.myaccount_tab import MyAccountTab
 from gui.views.tabs.library_tab import LibraryTab
 from gui.views.tabs.dlp_fetchmetadata_tab import DlpFetchMetadataTab
+from gui.views.tabs.dlp_download_tab import DlpDownloadTab  # <-- NEW IMPORT
 
 class YtDlpView(ttk.Notebook):
     def __init__(self, parent, services):
@@ -18,7 +19,15 @@ class YtDlpView(ttk.Notebook):
             self,
             add_group_service=services.add_group,
             add_channel_service=services.add_channel,
-            fetch_metadata_service=services.fetch_metadata # INJECTED HERE
+            fetch_metadata_service=services.fetch_metadata
+        )
+
+        # --- NEW: Instantiate Download Tab ---
+        self.download_tab = DlpDownloadTab(
+            self,
+            add_group_service=services.add_group,
+            add_channel_service=services.add_channel,
+            dlp_download_service=services.dlp_download_service
         )
 
         self.managesubs_tab = ManageSubsTab(
@@ -33,7 +42,9 @@ class YtDlpView(ttk.Notebook):
             ytdlp_service=services.ytdlp
         )
 
+        # --- ADD TABS TO THE NOTEBOOK ---
         self.add(self.library_tab, text="Library")
         self.add(self.fetch_tab, text="Fetch Metadata")
+        self.add(self.download_tab, text="Download Videos") # <-- ADDED HERE
         self.add(self.managesubs_tab, text="Manage Subscriptions")
         self.add(self.myaccount_tab, text="My Account")
