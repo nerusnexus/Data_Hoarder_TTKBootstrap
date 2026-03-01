@@ -4,6 +4,7 @@ import yt_dlp
 import re
 import traceback
 import typing
+import urllib.request  # <-- NEW IMPORT
 from config import METADATA_DIR
 from services.db.db_manager import DatabaseManager
 from yt_dlp.utils import DownloadError
@@ -59,7 +60,6 @@ class AddChannelService:
     def fetch_channel_info(self, url, group, progress_callback=None):
         url = url.strip()
 
-        # --- NEW: Convert handles to full URLs automatically ---
         if not url.startswith("http"):
             url = url.lstrip("@")
             url = f"https://www.youtube.com/@{url}"
@@ -127,6 +127,44 @@ class AddChannelService:
 
                     folder_name = f"{channel_id} ({handle})" if handle and handle != "Unknown_Handle" else channel_id
                     channel_folder = self.metadata_folder / folder_name
+                    channel_folder.mkdir(parents=True, exist_ok=True)
+
+                    # --- NEW: Extract and Download Profile Picture & Banner ---
+                    thumbnails = info.get("thumbnails", [])
+                    avatar_url = None
+                    banner_url = None
+
+                    # yt-dlp explicitly tags avatars and banners in the thumbnail id string
+                    avatars = [t for t in thumbnails if 'avatar' in t.get('id', '').lower()]
+                    banners = [t for t in thumbnails if 'banner' in t.get('id', '').lower()]
+
+                    # Get the highest resolution ones (usually at the end of the list)
+                    if avatars:
+                        avatar_url = avatars[-1].get("url")
+                    elif thumbnails:  # Fallback just in case
+                        avatar_url = thumbnails[-1].get("url")
+
+                    if banners:
+                        banner_url = banners[-1].get("url")
+
+                    # Download them locally to the newly created channel folder
+                    req_headers = {'User-Agent': 'Mozilla/5.0'}
+                    if avatar_url:
+                        try:
+                            req = urllib.request.Request(avatar_url, headers=req_headers)
+                            with urllib.request.urlopen(req) as resp, open(channel_folder / "profile.jpg", 'wb') as f:
+                                f.write(resp.read())
+                        except Exception as e:
+                            print(f"Failed to download avatar: {e}")
+
+                    if banner_url:
+                        try:
+                            req = urllib.request.Request(banner_url, headers=req_headers)
+                            with urllib.request.urlopen(req) as resp, open(channel_folder / "banner.jpg", 'wb') as f:
+                                f.write(resp.read())
+                        except Exception as e:
+                            print(f"Failed to download banner: {e}")
+                    # ---------------------------------------------------------
 
                     for i, video_entry in enumerate(all_videos):
                         if not video_entry:
@@ -166,7 +204,6 @@ class AddChannelService:
                                 is_downloaded = 1
                                 break
 
-                        # Verify if the info json file exists natively during library sync
                         is_metadata_downloaded = 1 if (
                                 video_folder / f"{expected_filename_base}.info.json").exists() else 0
 

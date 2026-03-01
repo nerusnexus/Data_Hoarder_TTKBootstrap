@@ -22,7 +22,6 @@ class YtDlpView(ttk.Notebook):
             fetch_metadata_service=services.fetch_metadata
         )
 
-        # --- NEW: Instantiate Download Tab ---
         self.download_tab = DlpDownloadTab(
             self,
             add_group_service=services.add_group,
@@ -45,6 +44,6 @@ class YtDlpView(ttk.Notebook):
         # --- ADD TABS TO THE NOTEBOOK ---
         self.add(self.library_tab, text="Library")
         self.add(self.fetch_tab, text="Fetch Metadata")
-        self.add(self.download_tab, text="Download Videos") # <-- ADDED HERE
+        self.add(self.download_tab, text="Download Videos")
         self.add(self.managesubs_tab, text="Manage Subscriptions")
         self.add(self.myaccount_tab, text="My Account")
