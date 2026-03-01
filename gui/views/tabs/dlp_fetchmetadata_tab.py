@@ -36,7 +36,6 @@ class MetadataWorkerCard(ttk.Frame):
         self.status_label = ttk.Label(self.stats_frame, text="Waiting...", font=("Segoe UI", 8), wraplength=280)
         self.status_label.pack(anchor=W)
 
-        # --- NEW: Scrollable Text Box for Logs ---
         log_frame = ttk.Frame(self)
         log_frame.pack(side=RIGHT, fill=BOTH, expand=True, padx=(10, 0))
 
@@ -85,6 +84,7 @@ class DlpFetchMetadataTab(ttk.Frame):
         self.start_btn = None
         self.mode_var = None
         self.cookie_var = None
+        self.skip_mode_var = None
         self.selected_items_list = []
         self.params = {}
         self.combos = {}
@@ -145,15 +145,25 @@ class DlpFetchMetadataTab(ttk.Frame):
             self.params[flag] = var
 
         ttk.Label(left_params, text="Options:", font=("Segoe UI", 9, "bold")).pack(anchor=W, pady=(10, 5))
-        optional_flags = [("--write-description", True), ("--write-thumbnail", True), ("--get-comments", False),
-                          ("Skip Downloaded Metadata", False)]
+        optional_flags = [("--write-description", True), ("--write-thumbnail", True), ("--get-comments", False)]
         for label, default in optional_flags:
             var = ttk.BooleanVar(value=default)
             ttk.Checkbutton(left_params, text=label, variable=var).pack(anchor=W, padx=5)
             self.params[label] = var
+
         self.cookie_var = ttk.BooleanVar(value=True)
         ttk.Checkbutton(left_params, text="Use Firefox Cookies", variable=self.cookie_var).pack(anchor=W, padx=5,
                                                                                                 pady=(5, 5))
+
+        # --- NEW: Re-fetch Policy Combobox ---
+        ttk.Label(left_params, text="Re-Fetch Policy:", font=("Segoe UI", 9, "bold")).pack(anchor=W, pady=(15, 5))
+        self.skip_mode_var = ttk.StringVar(value="Skip already downloaded")
+        skip_combo = ttk.Combobox(left_params, textvariable=self.skip_mode_var,
+                                  values=["Skip already downloaded", "Download 1 week old", "Download 1 month old",
+                                          "Download 1 year old", "Always Download"],
+                                  state="readonly")
+        skip_combo.pack(anchor=W, padx=5, fill=X)
+        # -------------------------------------
 
         right_params = ttk.Frame(params_container)
         right_params.pack(side=RIGHT, fill=BOTH, expand=True, padx=5)
@@ -178,7 +188,8 @@ class DlpFetchMetadataTab(ttk.Frame):
             self.params[label] = var
             self.combos[label] = cb
 
-        self.start_btn = ttk.Button(config_outer, text="Start Fetching", bootstyle="success-outline", command=self.start_process)
+        self.start_btn = ttk.Button(config_outer, text="Start Fetching", bootstyle="success-outline",
+                                    command=self.start_process)
         self.start_btn.pack(fill=X, pady=10)
         self.worker_container = ttk.Labelframe(self.main_scroll, text="Active Workers")
         self.worker_container.pack(fill=BOTH, expand=True, padx=10, pady=10)
@@ -241,7 +252,7 @@ class DlpFetchMetadataTab(ttk.Frame):
         for i in range(num_workers):
             self.worker_count += 1
             card = MetadataWorkerCard(self.worker_container, self.worker_count)
-            card.pack(fill=X, padx=5, pady=5) # Packs normally instead of using PanedWindow
+            card.pack(fill=X, padx=5, pady=5)
             threading.Thread(target=self.worker_loop, args=(card,), daemon=True).start()
 
     def worker_loop(self, card):
@@ -286,7 +297,7 @@ class DlpFetchMetadataTab(ttk.Frame):
                 "--write-description": self.params["--write-description"].get(),
                 "--write-thumbnail": self.params["--write-thumbnail"].get(),
                 "--get-comments": self.params["--get-comments"].get(),
-                "skip_downloaded": self.params["Skip Downloaded Metadata"].get(),
+                "skip_mode": self.skip_mode_var.get(),  # <-- Added skip mode variable
                 "--sleep-interval": self.params["--sleep-interval"].get(),
                 "--max-sleep-interval": self.params["--max-sleep-interval"].get(),
                 "--sleep-requests": self.params["--sleep-requests"].get(),

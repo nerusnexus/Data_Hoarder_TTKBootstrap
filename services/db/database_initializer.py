@@ -54,6 +54,7 @@ def initialize_database():
             filepath TEXT,
             thumb_filepath TEXT,
             is_lost_media INTEGER DEFAULT NULL,
+            last_metadata_fetch_date TEXT DEFAULT NULL,
             FOREIGN KEY(channel_name) REFERENCES channels(name) ON DELETE CASCADE
         )
     """)

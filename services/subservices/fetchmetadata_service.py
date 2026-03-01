@@ -1,6 +1,7 @@
 import json
 import yt_dlp
 from pathlib import Path
+from datetime import datetime, timedelta
 from config import METADATA_DIR
 from services.db.db_manager import DatabaseManager
 
@@ -50,7 +51,7 @@ class FetchMetadataService:
         log_file_path = target_dir / f"{handle} Logs.txt"
 
         js_runtimes = {'deno': {'path': None}}
-        skip_downloaded = params.get("skip_downloaded", False)
+        skip_mode = params.get("skip_mode", "Skip already downloaded")
 
         ydl_opts = {
             'quiet': True,
@@ -78,10 +79,38 @@ class FetchMetadataService:
         if log_callback:
             log_callback(f"\n--- Starting metadata extraction for {len(videos)} videos from {channel_name} ---")
 
+        # --- NEW: Date calculation for Refetch Policy ---
+        now = datetime.now()
+        threshold_date = None
+
+        if skip_mode == "Download 1 week old":
+            threshold_date = now - timedelta(days=7)
+        elif skip_mode == "Download 1 month old":
+            threshold_date = now - timedelta(days=30)
+        elif skip_mode == "Download 1 year old":
+            threshold_date = now - timedelta(days=365)
+        # ------------------------------------------------
+
         groups = {}
         for video in videos:
-            if skip_downloaded and video.get('is_metadata_downloaded') == 1:
-                if log_callback: log_callback(f"Skipped {video.get('title')} - Metadata already downloaded.")
+            is_downloaded = video.get('is_metadata_downloaded') == 1
+            last_fetch_str = video.get('last_metadata_fetch_date')
+
+            # Determine whether to skip based on selected policy
+            should_skip = False
+            if is_downloaded:
+                if skip_mode == "Skip already downloaded":
+                    should_skip = True
+                elif threshold_date and last_fetch_str:
+                    try:
+                        last_fetch = datetime.fromisoformat(last_fetch_str)
+                        if last_fetch > threshold_date:
+                            should_skip = True  # Too recent, skip it
+                    except ValueError:
+                        should_skip = False  # Bad date data, force re-download
+
+            if should_skip:
+                if log_callback: log_callback(f"Skipped {video.get('title')} - Metadata is up to date.")
                 continue
 
             vid_url = video.get('url')
@@ -93,12 +122,12 @@ class FetchMetadataService:
 
             video['url'] = vid_url
 
-            filepath = video.get('filepath')
-            if not filepath:
-                vid_type = video.get('video_type', 'Videos')
-                filepath = str(target_dir / f"({handle}) {vid_type}" / f"{video.get('video_id', 'unknown')}")
+            # BUG FIX: Force parent_dir strictly into METADATA_DIR, entirely ignoring DB filepath
+            vid_type = video.get('video_type', 'Videos')
+            meta_subfolder = target_dir / f"({handle}) {vid_type}"
+            meta_subfolder.mkdir(parents=True, exist_ok=True)
+            parent_dir = str(meta_subfolder)
 
-            parent_dir = str(Path(filepath).parent)
             if parent_dir not in groups:
                 groups[parent_dir] = []
             groups[parent_dir].append(video)
@@ -124,7 +153,6 @@ class FetchMetadataService:
                         url = video['url']
                         title = video.get('title', 'video')
                         video_id = video.get('video_id')
-                        filepath = video.get('filepath')
 
                         if log_callback:
                             log_callback(f"Extracting metadata for: {title}")
@@ -136,7 +164,6 @@ class FetchMetadataService:
                             info_dict = ydl.extract_info(url, download=True)
 
                             if info_dict:
-                                # Ask yt-dlp to tell us the exact file path it used natively!
                                 try:
                                     actual_filename = ydl.prepare_filename(info_dict)
                                     ext = info_dict.get('ext', 'mp4')
@@ -145,7 +172,8 @@ class FetchMetadataService:
                                     else:
                                         actual_base_path = str(Path(actual_filename).with_suffix(''))
                                 except Exception:
-                                    actual_base_path = filepath  # fallback if preparation fails
+                                    # Fallback
+                                    actual_base_path = f"{parent_dir}/unknown"
 
                                 thumb_path = f"{actual_base_path}.webp"
                                 duration = info_dict.get('duration') or 0
@@ -154,11 +182,13 @@ class FetchMetadataService:
                                 like_count = info_dict.get('like_count') or 0
                                 comment_count = info_dict.get('comment_count') or 0
 
-                                # Pull the newly discovered date, or fallback to database's default flat-date
                                 upload_date = info_dict.get('upload_date') or video.get('upload_date', '00000000')
                                 view_count = info_dict.get('view_count') or video.get('view_count', 0)
+                                fetch_date_iso = datetime.now().isoformat()
 
                                 with DatabaseManager.get_connection() as conn:
+                                    # Removed `filepath = ?` so we don't accidentally overwrite the media path
+                                    # which properly points to the Videos directory!
                                     conn.execute("""
                                         UPDATE videos 
                                         SET is_metadata_downloaded = 1, 
@@ -168,12 +198,12 @@ class FetchMetadataService:
                                             like_count = ?, 
                                             comment_count = ?, 
                                             thumb_filepath = ?,
-                                            filepath = ?,
                                             upload_date = ?,
-                                            view_count = ?
+                                            view_count = ?,
+                                            last_metadata_fetch_date = ?
                                         WHERE video_id = ?
                                     """, (duration, description, tags_json, like_count, comment_count, thumb_path,
-                                          actual_base_path, upload_date, view_count, video_id))
+                                          upload_date, view_count, fetch_date_iso, video_id))
                                     conn.commit()
 
                                 if log_callback:
