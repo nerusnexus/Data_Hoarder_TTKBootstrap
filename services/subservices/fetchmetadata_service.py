@@ -49,9 +49,7 @@ class FetchMetadataService:
         target_dir.mkdir(parents=True, exist_ok=True)
         log_file_path = target_dir / f"{handle} Logs.txt"
 
-        deno_path = params.get("deno_path", "").strip()
-        js_runtimes = {'deno': {'path': deno_path if deno_path else None}}
-
+        js_runtimes = {'deno': {'path': None}}
         skip_downloaded = params.get("skip_downloaded", False)
 
         ydl_opts = {
@@ -137,23 +135,49 @@ class FetchMetadataService:
                         try:
                             info_dict = ydl.extract_info(url, download=True)
 
-                            # --- NEW: Real-time DB population from memory ---
                             if info_dict:
-                                duration = info_dict.get('duration', 0)
-                                description = info_dict.get('description', '')
-                                tags_json = json.dumps(info_dict.get('tags', []))
-                                like_count = info_dict.get('like_count', 0)
-                                comment_count = info_dict.get('comment_count', 0)
-                                thumb_path = f"{filepath}.webp"
+                                # Ask yt-dlp to tell us the exact file path it used natively!
+                                try:
+                                    actual_filename = ydl.prepare_filename(info_dict)
+                                    ext = info_dict.get('ext', 'mp4')
+                                    if actual_filename.endswith(f".{ext}"):
+                                        actual_base_path = actual_filename[:-(len(ext) + 1)]
+                                    else:
+                                        actual_base_path = str(Path(actual_filename).with_suffix(''))
+                                except Exception:
+                                    actual_base_path = filepath  # fallback if preparation fails
+
+                                thumb_path = f"{actual_base_path}.webp"
+                                duration = info_dict.get('duration') or 0
+                                description = info_dict.get('description') or ''
+                                tags_json = json.dumps(info_dict.get('tags') or [])
+                                like_count = info_dict.get('like_count') or 0
+                                comment_count = info_dict.get('comment_count') or 0
+
+                                # Pull the newly discovered date, or fallback to database's default flat-date
+                                upload_date = info_dict.get('upload_date') or video.get('upload_date', '00000000')
+                                view_count = info_dict.get('view_count') or video.get('view_count', 0)
 
                                 with DatabaseManager.get_connection() as conn:
                                     conn.execute("""
                                         UPDATE videos 
-                                        SET is_metadata_downloaded = 1, duration = ?, description = ?, tags = ?, like_count = ?, comment_count = ?, thumb_filepath = ?
+                                        SET is_metadata_downloaded = 1, 
+                                            duration = ?, 
+                                            description = ?, 
+                                            tags = ?, 
+                                            like_count = ?, 
+                                            comment_count = ?, 
+                                            thumb_filepath = ?,
+                                            filepath = ?,
+                                            upload_date = ?,
+                                            view_count = ?
                                         WHERE video_id = ?
                                     """, (duration, description, tags_json, like_count, comment_count, thumb_path,
-                                          video_id))
+                                          actual_base_path, upload_date, view_count, video_id))
                                     conn.commit()
+
+                                if log_callback:
+                                    log_callback(f"Updated database values for {title}")
 
                         except Exception as e:
                             if log_callback:

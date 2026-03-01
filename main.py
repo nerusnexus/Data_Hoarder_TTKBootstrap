@@ -2,10 +2,14 @@ from ttkbootstrap import Style
 from gui.ui import MainUI
 from services.services import AppServices
 from gui.tray import TrayManager
+from oled_theme import theme as oled_theme
 
 
 def main():
     style = Style()
+
+    # Register your custom OLED theme into ttkbootstrap's system
+    style.register_theme(oled_theme)
 
     # We no longer need to pass 'data_folder' here!
     services = AppServices(style)

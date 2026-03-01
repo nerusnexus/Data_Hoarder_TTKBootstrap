@@ -2,6 +2,7 @@ import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 from ttkbootstrap.dialogs import Messagebox
 
+
 class AddGroupDialog(ttk.Toplevel):
     def __init__(self, parent, service):
         super().__init__(parent)
@@ -30,6 +31,9 @@ class AddGroupDialog(ttk.Toplevel):
         self.entry = ttk.Entry(container)
         self.entry.pack(fill=X, pady=(0, 20))
         self.entry.focus()
+
+        # BIND ENTER KEY
+        self.entry.bind("<Return>", lambda e: self.submit())
 
         btn_frame = ttk.Frame(container)
         btn_frame.pack(fill=X)

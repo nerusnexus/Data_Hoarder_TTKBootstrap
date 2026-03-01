@@ -16,7 +16,7 @@ def initialize_database():
         CREATE TABLE IF NOT EXISTS channels (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             group_name TEXT NOT NULL,
-            name TEXT NOT NULL,
+            name TEXT UNIQUE NOT NULL,
             handle TEXT,
             channel_id TEXT,
             url TEXT,
@@ -25,7 +25,6 @@ def initialize_database():
             description TEXT,
             tags TEXT,
             thumbnails TEXT,
-            UNIQUE(group_name, name),
             FOREIGN KEY(group_name) REFERENCES groups(name) ON DELETE CASCADE
         )
     """)

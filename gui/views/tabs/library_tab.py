@@ -33,7 +33,6 @@ class LibraryTab(ttk.Frame):
         self.build_ui()
         self.load_tree_data()
 
-        # NEW: Listen for background refresh events
         self.winfo_toplevel().bind("<<DataUpdated>>", self.refresh_tree, add="+")
 
     def build_ui(self):
@@ -161,21 +160,32 @@ class LibraryTab(ttk.Frame):
         card = ttk.Frame(parent, padding=10, bootstyle="secondary")
         card.grid(row=row, column=col, padx=10, pady=10, sticky="nsew")
 
-        # --- NEW: Looking up .webp database entry and disk paths ---
+        # --- Dynamic Thumbnail Finder (.webp AND .jpg safety net) ---
+        thumb_path = None
         db_thumb = video.get("thumb_filepath")
         filepath_str = video.get("filepath")
 
-        if db_thumb and Path(db_thumb).exists():
-            thumb_path = Path(db_thumb)
-        elif filepath_str and Path(f"{filepath_str}.webp").exists():
-            thumb_path = Path(f"{filepath_str}.webp")
-        else:
-            thumb_path = thumb_dir / f"{video['video_id']}.webp"
+        candidates = []
+        if db_thumb:
+            candidates.append(Path(db_thumb))
+            candidates.append(Path(db_thumb).with_suffix('.jpg'))  # Safety net
+
+        if filepath_str:
+            candidates.append(Path(f"{filepath_str}.webp"))
+            candidates.append(Path(f"{filepath_str}.jpg"))
+
+        candidates.append(thumb_dir / f"{video['video_id']}.webp")
+        candidates.append(thumb_dir / f"{video['video_id']}.jpg")
+
+        for cand in candidates:
+            if cand.exists():
+                thumb_path = cand
+                break
 
         img_label = ttk.Label(card, text="[No Thumbnail]", bootstyle="inverse-secondary", anchor=CENTER)
         img_label.pack(side=TOP, fill=X)
 
-        if thumb_path.exists():
+        if thumb_path:
             img_label.config(text="[Loading...]")
             self.image_queue.append((img_label, thumb_path))
 

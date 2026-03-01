@@ -57,6 +57,13 @@ class AddChannelService:
             conn.commit()
 
     def fetch_channel_info(self, url, group, progress_callback=None):
+        url = url.strip()
+
+        # --- NEW: Convert handles to full URLs automatically ---
+        if not url.startswith("http"):
+            url = url.lstrip("@")
+            url = f"https://www.youtube.com/@{url}"
+
         ydl_opts: dict[str, typing.Any] = {
             'quiet': True,
             'extract_flat': 'in_playlist',
@@ -161,7 +168,7 @@ class AddChannelService:
 
                         # Verify if the info json file exists natively during library sync
                         is_metadata_downloaded = 1 if (
-                                    video_folder / f"{expected_filename_base}.info.json").exists() else 0
+                                video_folder / f"{expected_filename_base}.info.json").exists() else 0
 
                         cursor.execute("SELECT id FROM videos WHERE video_id = ? AND channel_name = ?",
                                        (video_id, channel_name))

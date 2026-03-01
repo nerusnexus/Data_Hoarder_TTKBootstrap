@@ -20,7 +20,6 @@ class MetadataWorkerCard(ttk.Frame):
         self.title_label = ttk.Label(title_row, text=f"Worker #{worker_id}: Idle", font=("Segoe UI", 10, "bold"))
         self.title_label.pack(side=LEFT)
 
-        # NEW: Close Button
         self.close_btn = ttk.Button(title_row, text="✕", bootstyle="danger-link", command=self.close_worker)
         self.close_btn.pack(side=RIGHT)
 
@@ -37,8 +36,16 @@ class MetadataWorkerCard(ttk.Frame):
         self.status_label = ttk.Label(self.stats_frame, text="Waiting...", font=("Segoe UI", 8), wraplength=280)
         self.status_label.pack(anchor=W)
 
-        self.log_text = ttk.Text(self, height=6, font=("Consolas", 8), state=DISABLED)
-        self.log_text.pack(side=RIGHT, fill=BOTH, expand=True, padx=(10, 0))
+        # --- NEW: Scrollable Text Box for Logs ---
+        log_frame = ttk.Frame(self)
+        log_frame.pack(side=RIGHT, fill=BOTH, expand=True, padx=(10, 0))
+
+        self.log_text = ttk.Text(log_frame, height=8, font=("Consolas", 8), state=DISABLED)
+        self.log_text.pack(side=LEFT, fill=BOTH, expand=True)
+
+        scroll = ttk.Scrollbar(log_frame, command=self.log_text.yview)
+        scroll.pack(side=RIGHT, fill=Y)
+        self.log_text.config(yscrollcommand=scroll.set)
 
     def stop_worker(self):
         self.stop_event.set()
@@ -73,7 +80,6 @@ class DlpFetchMetadataTab(ttk.Frame):
         self.main_scroll.pack(fill=BOTH, expand=True)
 
         self.worker_container = None
-        self.paned_workers = None
         self.tree = None
         self.queue_scroll = None
         self.selected_items_list = []
@@ -83,8 +89,6 @@ class DlpFetchMetadataTab(ttk.Frame):
         self.worker_count = 0
 
         self.build_ui()
-
-        # NEW: Listen for background refresh events
         self.winfo_toplevel().bind("<<DataUpdated>>", self.refresh_tree, add="+")
 
     def build_ui(self):
@@ -148,12 +152,6 @@ class DlpFetchMetadataTab(ttk.Frame):
         ttk.Checkbutton(left_params, text="Use Firefox Cookies", variable=self.cookie_var).pack(anchor=W, padx=5,
                                                                                                 pady=(5, 5))
 
-        ttk.Label(left_params, text="Deno Path (leave empty for auto):", font=("Segoe UI", 9, "bold")).pack(anchor=W,
-                                                                                                            pady=(10,
-                                                                                                                  2))
-        self.deno_var = ttk.StringVar(value="")
-        ttk.Entry(left_params, textvariable=self.deno_var).pack(anchor=W, fill=X, padx=5)
-
         right_params = ttk.Frame(params_container)
         right_params.pack(side=RIGHT, fill=BOTH, expand=True, padx=5)
         inputs = [
@@ -181,11 +179,9 @@ class DlpFetchMetadataTab(ttk.Frame):
                                     command=self.start_process)
         self.start_btn.pack(fill=X, pady=10)
 
-        self.worker_container = ttk.Labelframe(self.main_scroll, text="Active Workers (Drag dividers to resize)")
+        # --- NEW: Replaced PanedWindow with a standard frame ---
+        self.worker_container = ttk.Labelframe(self.main_scroll, text="Active Workers")
         self.worker_container.pack(fill=BOTH, expand=True, padx=10, pady=10)
-
-        self.paned_workers = ttk.Panedwindow(self.worker_container, orient=VERTICAL)
-        self.paned_workers.pack(fill=BOTH, expand=True, padx=5, pady=5)
 
     def refresh_tree(self, _event=None):
         for item in self.tree.get_children():
@@ -244,8 +240,8 @@ class DlpFetchMetadataTab(ttk.Frame):
 
         for i in range(num_workers):
             self.worker_count += 1
-            card = MetadataWorkerCard(self.paned_workers, self.worker_count)
-            self.paned_workers.add(card, weight=1)
+            card = MetadataWorkerCard(self.worker_container, self.worker_count)
+            card.pack(fill=X, padx=5, pady=5) # Packs normally instead of using PanedWindow
             threading.Thread(target=self.worker_loop, args=(card,), daemon=True).start()
 
     def worker_loop(self, card):
@@ -297,8 +293,7 @@ class DlpFetchMetadataTab(ttk.Frame):
                 "--sleep-subtitles": self.params["--sleep-subtitles"].get(),
                 "--retries": self.params["--retries"].get(),
                 "--fragment-retries": self.params["--fragment-retries"].get(),
-                "use_cookies": self.cookie_var.get(),
-                "deno_path": self.deno_var.get()
+                "use_cookies": self.cookie_var.get()
             }
 
             def log_cb(msg):

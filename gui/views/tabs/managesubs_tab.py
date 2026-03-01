@@ -14,6 +14,13 @@ class ManageSubsTab(ttk.Frame):
         self.build_ui()
         self.load_data()
 
+        self.winfo_toplevel().bind("<<DataUpdated>>", self.refresh_tree, add="+")
+
+    def refresh_tree(self, _event=None):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        self.load_data()
+
     def load_data(self):
         groups = self.add_group_service.get_all_groups()
         for group in groups:
@@ -35,12 +42,22 @@ class ManageSubsTab(ttk.Frame):
         self.tree = ttk.Treeview(container, show="tree")
         self.tree.pack(side="left", fill="both", expand=True)
 
+        # BIND DOUBLE CLICK
+        self.tree.bind("<Double-1>", self.on_double_click)
+
         buttons = ttk.Frame(container)
         buttons.pack(side="right", fill="y", padx=(10, 0))
 
         ttk.Button(buttons, text="+ Group", command=self.add_group).pack(fill="x", pady=5)
         ttk.Button(buttons, text="+ Channel", command=self.add_channel).pack(fill="x", pady=5)
         ttk.Button(buttons, text="Delete", command=self.delete_selected).pack(fill="x", pady=5)
+
+    def on_double_click(self, event):
+        selected = self.tree.selection()
+        if not selected:
+            return
+        if "group" in self.tree.item(selected[0], "tags"):
+            self.add_channel()
 
     def add_group(self):
         dialog = AddGroupDialog(
@@ -51,13 +68,6 @@ class ManageSubsTab(ttk.Frame):
         self.wait_window(dialog)
 
         if dialog.result:
-            self.tree.insert(
-                "",
-                "end",
-                text=dialog.result,
-                tags=("group",)
-            )
-            # Broadcast update
             self.winfo_toplevel().event_generate("<<DataUpdated>>")
 
     def add_channel(self):
@@ -82,19 +92,10 @@ class ManageSubsTab(ttk.Frame):
             return
 
         try:
-            channel_name = self.add_channel_service.add_channel(
+            self.add_channel_service.add_channel(
                 group_name,
                 dialog.result
             )
-
-            self.tree.insert(
-                parent_iid,
-                "end",
-                text=channel_name,
-                tags=("channel",)
-            )
-
-            # Broadcast update
             self.winfo_toplevel().event_generate("<<DataUpdated>>")
 
         except Exception as e:
@@ -113,6 +114,10 @@ class ManageSubsTab(ttk.Frame):
             return
 
         for iid in selected:
+            # Prevents crashing if a parent group was deleted, which already auto-deleted the child row
+            if not self.tree.exists(iid):
+                continue
+
             text = self.tree.item(iid, "text")
             tags = self.tree.item(iid, "tags")
 
@@ -122,10 +127,8 @@ class ManageSubsTab(ttk.Frame):
                 else:
                     self.add_channel_service.delete_channel(text)
 
-                self.tree.delete(iid)
-
-                # Broadcast update
-                self.winfo_toplevel().event_generate("<<DataUpdated>>")
-
             except Exception as e:
                 Messagebox.show_error("Error", str(e))
+
+        # Force the entire tree to reload to perfectly reflect DB state
+        self.winfo_toplevel().event_generate("<<DataUpdated>>")

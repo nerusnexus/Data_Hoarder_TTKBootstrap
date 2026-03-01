@@ -22,13 +22,16 @@ class AddChannelDialog(ttk.Toplevel):
 
         ttk.Label(
             container,
-            text="Channel URL",
+            text="Channel URL or @Handle",
             font=("Segoe UI", 12, "bold")
         ).pack(pady=(0, 10))
 
         self.entry = ttk.Entry(container)
         self.entry.pack(fill=X, pady=(0, 20))
         self.entry.focus()
+
+        # BIND ENTER KEY
+        self.entry.bind("<Return>", lambda e: self.submit())
 
         btn_frame = ttk.Frame(container)
         btn_frame.pack(fill=X)
