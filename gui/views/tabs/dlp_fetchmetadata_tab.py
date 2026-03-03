@@ -4,68 +4,8 @@ from ttkbootstrap.widgets.scrolled import ScrolledFrame
 import threading
 import queue
 
-
-class MetadataWorkerCard(ttk.Frame):
-    def __init__(self, parent, worker_id):
-        super().__init__(parent, bootstyle="secondary", padding=10)
-        self.stop_event = threading.Event()
-
-        self.stats_frame = ttk.Frame(self, width=300, bootstyle="secondary")
-        self.stats_frame.pack(side=LEFT, fill=Y)
-        self.stats_frame.pack_propagate(False)
-
-        title_row = ttk.Frame(self.stats_frame, bootstyle="secondary")
-        title_row.pack(fill=X, anchor=W)
-
-        self.title_label = ttk.Label(title_row, text=f"Worker #{worker_id}: Idle", font=("Segoe UI", 10, "bold"))
-        self.title_label.pack(side=LEFT)
-
-        self.close_btn = ttk.Button(title_row, text="✕", bootstyle="danger-link", command=self.close_worker)
-        self.close_btn.pack(side=RIGHT)
-
-        self.stop_btn = ttk.Button(title_row, text="Stop", bootstyle="danger-outline", padding=(2, 0),
-                                   command=self.stop_worker)
-        self.stop_btn.pack(side=RIGHT, padx=5)
-
-        self.progress_text = ttk.Label(self.stats_frame, text="Processed: 0/0")
-        self.progress_text.pack(anchor=W, pady=5)
-
-        self.progress_bar = ttk.Progressbar(self.stats_frame, bootstyle="success", mode="determinate")
-        self.progress_bar.pack(fill=X, pady=5)
-
-        self.status_label = ttk.Label(self.stats_frame, text="Waiting...", font=("Segoe UI", 8), wraplength=280)
-        self.status_label.pack(anchor=W)
-
-        log_frame = ttk.Frame(self)
-        log_frame.pack(side=RIGHT, fill=BOTH, expand=True, padx=(10, 0))
-
-        self.log_text = ttk.Text(log_frame, height=8, font=("Consolas", 8), state=DISABLED)
-        self.log_text.pack(side=LEFT, fill=BOTH, expand=True)
-
-        scroll = ttk.Scrollbar(log_frame, command=self.log_text.yview)
-        scroll.pack(side=RIGHT, fill=Y)
-        self.log_text.config(yscrollcommand=scroll.set)
-
-    def stop_worker(self):
-        self.stop_event.set()
-        self.stop_btn.config(state=DISABLED, text="Stopping...")
-        self.update_log("Stop requested. Worker will exit cleanly after the current video finishes.")
-
-    def close_worker(self):
-        self.stop_event.set()
-        self.destroy()
-
-    def update_log(self, message):
-        self.log_text.config(state="normal")
-        self.log_text.insert(END, f"{message}\n")
-        self.log_text.see(END)
-        self.log_text.config(state="disabled")
-
-    def update_ui_state(self, title=None, progress=None, status=None, bar_val=None):
-        if title: self.title_label.config(text=title)
-        if progress: self.progress_text.config(text=progress)
-        if status: self.status_label.config(text=status)
-        if bar_val is not None: self.progress_bar["value"] = bar_val
+# Import the newly extracted reusable component
+from gui.components.worker_card import WorkerCard
 
 
 class DlpFetchMetadataTab(ttk.Frame):
@@ -251,7 +191,8 @@ class DlpFetchMetadataTab(ttk.Frame):
 
         for i in range(num_workers):
             self.worker_count += 1
-            card = MetadataWorkerCard(self.worker_container, self.worker_count)
+            # Instantiate the new WorkerCard instead of MetadataWorkerCard
+            card = WorkerCard(self.worker_container, self.worker_count)
             card.pack(fill=X, padx=5, pady=5)
             threading.Thread(target=self.worker_loop, args=(card,), daemon=True).start()
 
@@ -267,13 +208,15 @@ class DlpFetchMetadataTab(ttk.Frame):
 
             channel_info = self.add_channel_service.get_channel_details(item_name)
             if not channel_info:
-                self.after(0, lambda c=card, n=item_name: c.update_log(f"Error: {n} not found in DB"))
+                # Fixed parameter warning
+                self.after(0, lambda c, n: c.update_log(f"Error: {n} not found in DB"), card, item_name)
                 self.task_queue.task_done()
                 continue
 
             videos = self.add_channel_service.get_videos_by_channel(item_name)
             if not videos:
-                self.after(0, lambda c=card, n=item_name: c.update_log(f"No videos found in DB for {n}"))
+                # Fixed parameter warning
+                self.after(0, lambda c, n: c.update_log(f"No videos found in DB for {n}"), card, item_name)
                 self.task_queue.task_done()
                 continue
 
@@ -287,17 +230,18 @@ class DlpFetchMetadataTab(ttk.Frame):
 
             safe_handle = handle if handle.startswith('@') else f"@{handle}"
 
-            self.after(0, lambda c=card, n=item_name, v=videos: c.update_ui_state(
+            # Fixed parameter warning
+            self.after(0, lambda c, n, v: c.update_ui_state(
                 title=f"Fetching: {n}",
                 status=f"Starting individual fetch for {len(v)} videos..."
-            ))
+            ), card, item_name, videos)
 
             ui_params = {
                 "--write-info-json": self.params["--write-info-json"].get(),
                 "--write-description": self.params["--write-description"].get(),
                 "--write-thumbnail": self.params["--write-thumbnail"].get(),
                 "--get-comments": self.params["--get-comments"].get(),
-                "skip_mode": self.skip_mode_var.get(),  # <-- Added skip mode variable
+                "skip_mode": self.skip_mode_var.get(),
                 "--sleep-interval": self.params["--sleep-interval"].get(),
                 "--max-sleep-interval": self.params["--max-sleep-interval"].get(),
                 "--sleep-requests": self.params["--sleep-requests"].get(),
@@ -308,15 +252,17 @@ class DlpFetchMetadataTab(ttk.Frame):
             }
 
             def log_cb(msg):
-                self.after(0, lambda c=card, m=msg: c.update_log(m))
+                # Fixed parameter warning
+                self.after(0, lambda c, m: c.update_log(m), card, msg)
 
             def status_cb(msg, progress, total):
                 val = (progress / total) * 100 if total > 0 else 0
-                self.after(0, lambda c=card, m=msg, p=progress, t=total, v=val: c.update_ui_state(
+                # Fixed parameter warning
+                self.after(0, lambda c, m, p, t, v: c.update_ui_state(
                     status=m,
                     progress=f"Processed: {p}/{t}",
                     bar_val=v
-                ))
+                ), card, msg, progress, total, val)
 
             self.fetch_metadata_service.fetch(videos, channel_info.get("name"), ui_params, folder_name, safe_handle,
                                               log_cb, status_cb, card.stop_event)
@@ -324,7 +270,8 @@ class DlpFetchMetadataTab(ttk.Frame):
             self.task_queue.task_done()
 
         final_msg = "Worker stopped." if card.stop_event.is_set() else "Worker idle. All assigned tasks complete."
-        self.after(0, lambda c=card, s=final_msg: c.update_ui_state(
+        # Fixed parameter warning
+        self.after(0, lambda c, s: c.update_ui_state(
             status=s,
             bar_val=100
-        ))
+        ), card, final_msg)
