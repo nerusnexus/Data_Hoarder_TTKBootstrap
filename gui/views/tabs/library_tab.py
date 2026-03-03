@@ -18,7 +18,6 @@ class LibraryTab(ttk.Frame):
         self.add_group_service = add_group_service
         self.add_channel_service = add_channel_service
         self.tree = None
-        self.library_label = None
         self.notebook = None
         self.tab_frames = {}
         self._search_timer = None
@@ -92,9 +91,6 @@ class LibraryTab(ttk.Frame):
         main_content = ttk.Frame(self)
         main_content.pack(side=RIGHT, fill=BOTH, expand=True)
 
-        self.library_label = ttk.Label(main_content, text="Select a channel to view library", font=("Segoe UI", 12))
-        self.library_label.pack(pady=(10, 5))
-
         self.notebook = ttk.Notebook(main_content)
         self.notebook.pack(fill=BOTH, expand=True, padx=10, pady=10)
 
@@ -127,7 +123,6 @@ class LibraryTab(ttk.Frame):
         if "channel" not in item["tags"]: return
 
         channel_name = item["text"]
-        self.library_label.config(text=f"Library: {channel_name}")
         self.current_videos = self.add_channel_service.get_videos_by_channel(channel_name)
 
         channel_info = self.add_channel_service.get_channel_details(channel_name)
