@@ -47,7 +47,7 @@ class MainUI:
         ttk.Label(self.sidebar, text="Data Hoarder").pack(pady=5)
 
         ttk.Button(
-            self.sidebar, text="Dashboard", command=lambda: self.show_view("dashboard")
+            self.sidebar, text="Dashboard", bootstyle="outline", command=lambda: self.show_view("dashboard")
         ).pack(fill="x", padx=5, pady=5)
 
         # --- NEW: Image handling for yt-dlp button ---
@@ -84,12 +84,14 @@ class MainUI:
         ttk.Button(
             self.sidebar,
             text="Database",
+            bootstyle="outline",
             command=lambda: self.show_view("db")
         ).pack(fill="x", padx=5, pady=5)
 
         ttk.Button(
             self.sidebar,
             text="Settings",
+            bootstyle="outline",
             command=lambda: self.show_view("settings")
         ).pack(fill="x", padx=5, pady=5)
 
