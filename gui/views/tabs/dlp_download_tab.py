@@ -81,6 +81,7 @@ class DlpDownloadTab(ttk.Frame):
         self.worker_container = None
         self.tree = None
         self.queue_scroll = None
+        self.mode_var = None
         self.selected_items_list = []
         self.params = {}
         self.combos = {}
@@ -120,6 +121,16 @@ class DlpDownloadTab(ttk.Frame):
         config_frame = ttk.Labelframe(config_outer, text="Download Parameters", padding=10)
         config_frame.pack(fill=BOTH, expand=True)
 
+        # Speed Presets
+        mode_frame = ttk.Frame(config_frame)
+        mode_frame.pack(fill=X, pady=(0, 10))
+        ttk.Label(mode_frame, text="Speed Preset:", font=("Segoe UI", 9, "bold")).pack(side=LEFT)
+        self.mode_var = ttk.StringVar(value="Default")
+        mode_combo = ttk.Combobox(mode_frame, textvariable=self.mode_var, values=["Slow", "Default", "Fast"],
+                                  state="readonly", width=10)
+        mode_combo.pack(side=LEFT, padx=10)
+        mode_combo.bind("<<ComboboxSelected>>", self.apply_speed_preset)
+
         params_container = ttk.Frame(config_frame)
         params_container.pack(fill=BOTH, expand=True)
 
@@ -131,34 +142,53 @@ class DlpDownloadTab(ttk.Frame):
         format_cb = ttk.Combobox(left_params, textvariable=self.format_var,
                                  values=["bestvideo+bestaudio/best", "best", "bestvideo[height<=1080]+bestaudio/best",
                                          "bestaudio/best"], state="readonly")
-        format_cb.pack(fill=X, pady=(0, 10))
+        format_cb.pack(fill=X, pady=(0, 5))
 
-        ttk.Label(left_params, text="Merge Container:", font=("Segoe UI", 9, "bold")).pack(anchor=W, pady=(0, 5))
+        ttk.Label(left_params, text="Merge Container:", font=("Segoe UI", 9, "bold")).pack(anchor=W, pady=(5, 5))
         self.container_var = ttk.StringVar(value="mkv")
         container_cb = ttk.Combobox(left_params, textvariable=self.container_var, values=["mkv", "mp4", "webm"],
                                     state="readonly")
-        container_cb.pack(fill=X, pady=(0, 10))
+        container_cb.pack(fill=X, pady=(0, 5))
 
-        ttk.Label(left_params, text="Options:", font=("Segoe UI", 9, "bold")).pack(anchor=W, pady=(10, 5))
+        ttk.Label(left_params, text="Max Resolution:", font=("Segoe UI", 9, "bold")).pack(anchor=W, pady=(5, 5))
+        self.max_res_var = ttk.StringVar(value="2160p")
+        res_cb = ttk.Combobox(left_params, textvariable=self.max_res_var,
+                              values=["480p", "720p", "1080p", "1440p", "2160p"], state="readonly")
+        res_cb.pack(fill=X, pady=(0, 10))
 
-        self.skip_downloaded_var = ttk.BooleanVar(value=True)
-        ttk.Checkbutton(left_params, text="Skip Downloaded Media", variable=self.skip_downloaded_var).pack(anchor=W,
-                                                                                                           padx=5)
+        ttk.Label(left_params, text="Options:", font=("Segoe UI", 9, "bold")).pack(anchor=W, pady=(5, 5))
 
         self.cookie_var = ttk.BooleanVar(value=True)
-        ttk.Checkbutton(left_params, text="Use Firefox Cookies", variable=self.cookie_var).pack(anchor=W, padx=5,
-                                                                                                pady=(5, 5))
+        ttk.Checkbutton(left_params, text="Use Firefox Cookies", variable=self.cookie_var).pack(anchor=W, padx=5)
+
+        # Embedding Checkboxes (No write checkboxes, only embed!)
+        self.embed_vars = {}
+        for flag in ["--embed-metadata", "--embed-thumbnail", "--embed-chapters", "--embed-info-json"]:
+            var = ttk.BooleanVar(value=True)
+            ttk.Checkbutton(left_params, text=flag, variable=var).pack(anchor=W, padx=5, pady=(2, 0))
+            self.embed_vars[flag] = var
+
+        ttk.Label(left_params, text="Re-Fetch Policy:", font=("Segoe UI", 9, "bold")).pack(anchor=W, pady=(15, 5))
+        self.skip_mode_var = ttk.StringVar(value="Skip already downloaded")
+        skip_combo = ttk.Combobox(left_params, textvariable=self.skip_mode_var,
+                                  values=["Skip already downloaded", "Download 1 week old", "Download 1 month old",
+                                          "Download 1 year old", "Always Download"],
+                                  state="readonly")
+        skip_combo.pack(anchor=W, padx=5, fill=X, pady=(0, 10))
 
         right_params = ttk.Frame(params_container)
         right_params.pack(side=RIGHT, fill=BOTH, expand=True, padx=5)
         inputs = [
             ("Workers (Threads)", "1", [str(i) for i in range(1, 17)]),
+            ("-N (Concurrent Frags)", "4", [str(i) for i in range(1, 33)]),
+            ("-r (Rate Limit)", "8M", ["1M", "2M", "4M", "8M", "16M", "32M", "No Limit"]),
             ("--sleep-requests", "1", [str(i) for i in range(0, 11)]),
             ("--sleep-interval", "5", [str(i) for i in range(0, 61, 5)]),
             ("--max-sleep-interval", "15", [str(i) for i in range(0, 121, 10)]),
             ("--retries", "10", [str(i) for i in range(0, 101, 5)]),
             ("--fragment-retries", "10", [str(i) for i in range(0, 101, 5)])
         ]
+
         for label, default, vals in inputs:
             row = ttk.Frame(right_params)
             row.pack(fill=X, pady=2)
@@ -175,6 +205,19 @@ class DlpDownloadTab(ttk.Frame):
 
         self.worker_container = ttk.Labelframe(self.main_scroll, text="Active Workers")
         self.worker_container.pack(fill=BOTH, expand=True, padx=10, pady=10)
+
+    def apply_speed_preset(self, _event):
+        presets = {
+            "Slow": ("2", "20", "60", "2", "4M"),
+            "Default": ("1", "10", "30", "4", "8M"),
+            "Fast": ("0", "5", "15", "8", "16M")
+        }
+        vals = presets[self.mode_var.get()]
+        self.params["--sleep-requests"].set(vals[0])
+        self.params["--sleep-interval"].set(vals[1])
+        self.params["--max-sleep-interval"].set(vals[2])
+        self.params["-N (Concurrent Frags)"].set(vals[3])
+        self.params["-r (Rate Limit)"].set(vals[4])
 
     def refresh_tree(self, _event=None):
         for item in self.tree.get_children():
@@ -262,13 +305,20 @@ class DlpDownloadTab(ttk.Frame):
             ui_params = {
                 "format": self.format_var.get(),
                 "container": self.container_var.get(),
-                "skip_downloaded": self.skip_downloaded_var.get(),
+                "max_res": self.max_res_var.get(),
+                "skip_mode": self.skip_mode_var.get(),
                 "--sleep-interval": self.params["--sleep-interval"].get(),
                 "--max-sleep-interval": self.params["--max-sleep-interval"].get(),
                 "--sleep-requests": self.params["--sleep-requests"].get(),
+                "-N": self.params["-N (Concurrent Frags)"].get(),
+                "-r": self.params["-r (Rate Limit)"].get(),
                 "--retries": self.params["--retries"].get(),
                 "--fragment-retries": self.params["--fragment-retries"].get(),
-                "use_cookies": self.cookie_var.get()
+                "use_cookies": self.cookie_var.get(),
+                "embed_metadata": self.embed_vars["--embed-metadata"].get(),
+                "embed_thumbnail": self.embed_vars["--embed-thumbnail"].get(),
+                "embed_chapters": self.embed_vars["--embed-chapters"].get(),
+                "embed_info_json": self.embed_vars["--embed-info-json"].get()
             }
 
             def log_cb(msg):
