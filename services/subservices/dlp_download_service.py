@@ -1,6 +1,8 @@
+import sqlite3
 import yt_dlp
 from pathlib import Path
 from datetime import datetime, timedelta
+from typing import Any
 from config import METADATA_DIR
 from services.db.db_manager import DatabaseManager
 
@@ -14,7 +16,7 @@ class DownloadLogger:
         try:
             with open(self.log_file_path, 'a', encoding='utf-8') as f:
                 f.write(msg + '\n')
-        except Exception:
+        except OSError:  # Fixed: Catch specific file I/O errors instead of all Exceptions
             pass
 
     def debug(self, msg):
@@ -73,7 +75,7 @@ class DlpDownloadService:
                     rate_limit_bytes = float(rate_limit_str[:-1]) * 1024
                 else:
                     rate_limit_bytes = float(rate_limit_str)
-            except Exception:
+            except ValueError:  # Fixed: Catch specific float conversion errors
                 rate_limit_bytes = None
 
         # Fetch embedding parameters
@@ -82,7 +84,11 @@ class DlpDownloadService:
         embed_infojson = params.get("embed_info_json", True)
         embed_thumbnail = params.get("embed_thumbnail", True)
 
-        ydl_opts = {
+        # Fixed: Explicitly typed list to prevent IDE generic type mismatch errors
+        postprocessors: list[dict[str, Any]] = []
+
+        # Fixed: Explicitly typed dictionary to satisfy yt-dlp's parameter expectations
+        ydl_opts: dict[str, Any] = {
             'quiet': True,
             'skip_download': False,
             'ignore_no_formats_error': True,
@@ -111,7 +117,7 @@ class DlpDownloadService:
 
             'logger': DownloadLogger(log_callback, log_file_path),
             'ignoreerrors': True,
-            'postprocessors': []
+            'postprocessors': postprocessors
         }
 
         # Apply FFmpeg postprocessors for embedding metadata, chapters, and info.json inside the media container
@@ -164,7 +170,7 @@ class DlpDownloadService:
                     except ValueError:
                         should_skip = False  # Bad date data, force re-download
                 elif threshold_date and not last_fetch_str:
-                    # If we don't have a specific download date stored but it's marked as downloaded,
+                    # If we don't have a specific download date stored, but it's marked as downloaded,
                     # we do not skip so it establishes a fetch date this time.
                     should_skip = False
 
@@ -204,7 +210,7 @@ class DlpDownloadService:
             ydl_opts['outtmpl'] = {'default': parent_dir + "/%(upload_date|00000000)s_%(title)s.%(ext)s"}
 
             try:
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl: # type: ignore
                     for video in video_group:
                         if stop_event and stop_event.is_set():
                             if log_callback: log_callback("Worker stopped by user.")
@@ -231,7 +237,7 @@ class DlpDownloadService:
                                     conn.execute("""
                                         UPDATE videos SET is_downloaded = 1, last_download_date = ? WHERE video_id = ?
                                     """, (fetch_date_iso, video_id))
-                                except Exception:
+                                except sqlite3.OperationalError:  # Fixed: Catch specific database schema error
                                     # Fallback if the last_download_date column doesn't exist in the database yet
                                     conn.execute("""
                                         UPDATE videos SET is_downloaded = 1 WHERE video_id = ?

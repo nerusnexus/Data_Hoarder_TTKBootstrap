@@ -56,10 +56,10 @@ class DownloadWorkerCard(ttk.Frame):
         self.destroy()
 
     def update_log(self, message):
-        self.log_text.config(state=NORMAL)
+        self.log_text.config(state="normal")
         self.log_text.insert(END, f"{message}\n")
         self.log_text.see(END)
-        self.log_text.config(state=DISABLED)
+        self.log_text.config(state="disabled")
 
     def update_ui_state(self, title=None, progress=None, status=None, bar_val=None):
         if title: self.title_label.config(text=title)
@@ -82,6 +82,15 @@ class DlpDownloadTab(ttk.Frame):
         self.tree = None
         self.queue_scroll = None
         self.mode_var = None
+        self.cookie_var = None
+        self.max_res_var = None
+        self.embed_vars = None
+        self.container_var = None
+        self.start_btn = None
+        self.skip_btn = None
+        self.format_var = None
+        self.skip_mode_var = None
+
         self.selected_items_list = []
         self.params = {}
         self.combos = {}
@@ -277,13 +286,15 @@ class DlpDownloadTab(ttk.Frame):
 
             channel_info = self.add_channel_service.get_channel_details(item_name)
             if not channel_info:
-                self.after(0, lambda c=card, n=item_name: c.update_log(f"Error: {n} not found in DB"))
+                # FIXED: Passing args through .after() instead of lambda defaults
+                self.after(0, lambda c, n: c.update_log(f"Error: {n} not found in DB"), card, item_name)
                 self.task_queue.task_done()
                 continue
 
             videos = self.add_channel_service.get_videos_by_channel(item_name)
             if not videos:
-                self.after(0, lambda c=card, n=item_name: c.update_log(f"No videos found in DB for {n}"))
+                # FIXED: Passing args through .after()
+                self.after(0, lambda c, n: c.update_log(f"No videos found in DB for {n}"), card, item_name)
                 self.task_queue.task_done()
                 continue
 
@@ -297,10 +308,11 @@ class DlpDownloadTab(ttk.Frame):
 
             safe_handle = handle if handle.startswith('@') else f"@{handle}"
 
-            self.after(0, lambda c=card, n=item_name, v=videos: c.update_ui_state(
+            # FIXED: Passing args through .after()
+            self.after(0, lambda c, n, v: c.update_ui_state(
                 title=f"Downloading: {n}",
                 status=f"Preparing download queue for {len(v)} videos..."
-            ))
+            ), card, item_name, videos)
 
             ui_params = {
                 "format": self.format_var.get(),
@@ -322,15 +334,17 @@ class DlpDownloadTab(ttk.Frame):
             }
 
             def log_cb(msg):
-                self.after(0, lambda c=card, m=msg: c.update_log(m))
+                # FIXED: Passing args through .after()
+                self.after(0, lambda c, m: c.update_log(m), card, msg)
 
             def status_cb(msg, progress, total):
                 val = (progress / total) * 100 if total > 0 else 0
-                self.after(0, lambda c=card, m=msg, p=progress, t=total, v=val: c.update_ui_state(
+                # FIXED: Passing args through .after()
+                self.after(0, lambda c, m, p, t, v: c.update_ui_state(
                     status=m,
                     progress=f"Processed: {p}/{t}",
                     bar_val=v
-                ))
+                ), card, msg, progress, total, val)
 
             self.dlp_download_service.fetch(videos, channel_info.get("name"), ui_params, folder_name, safe_handle,
                                             log_cb, status_cb, card.stop_event)
@@ -338,7 +352,8 @@ class DlpDownloadTab(ttk.Frame):
             self.task_queue.task_done()
 
         final_msg = "Worker stopped." if card.stop_event.is_set() else "Worker idle. All assigned tasks complete."
-        self.after(0, lambda c=card, s=final_msg: c.update_ui_state(
+        # FIXED: Passing args through .after()
+        self.after(0, lambda c, s: c.update_ui_state(
             status=s,
             bar_val=100
-        ))
+        ), card, final_msg)
