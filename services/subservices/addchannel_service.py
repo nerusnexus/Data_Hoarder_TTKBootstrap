@@ -5,7 +5,8 @@ import re
 import traceback
 import typing
 import urllib.request
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
+from datetime import datetime
 from config import METADATA_DIR, VIDEOS_DIR
 from services.db.db_manager import DatabaseManager
 from yt_dlp.utils import DownloadError
@@ -60,7 +61,6 @@ class AddChannelService:
             conn.execute("DELETE FROM channels WHERE name = ?", (channel_name,))
             conn.commit()
 
-    # --- NEW: Ultra-fast OEmbed Lost Media Checker ---
     def check_videos_online_status(self, videos, progress_callback=None):
         with self.get_connection() as conn:
             cursor = conn.cursor()
@@ -76,19 +76,17 @@ class AddChannelService:
                     else:
                         continue
 
-                # Fast oEmbed check (Takes ~0.1 seconds per video instead of 2 seconds)
                 oembed_url = f"https://www.youtube.com/oembed?url={video_url}&format=json"
-                is_lost = 0  # Default assume online
+                is_lost = 0
 
                 try:
                     req = urllib.request.Request(oembed_url, headers={'User-Agent': 'Mozilla/5.0'})
                     urllib.request.urlopen(req)
                 except HTTPError as e:
-                    # 404 = Deleted/Not Found, 401 = Privated
                     if e.code in [401, 404]:
                         is_lost = 1
-                except Exception:
-                    pass  # Network error/Timeout, leave as 0 to prevent false "Lost Media" flags
+                except URLError:  # Fixed broad exception
+                    pass
 
                 cursor.execute("UPDATE videos SET is_lost_media = ? WHERE video_id = ?", (is_lost, video_id))
 
@@ -97,7 +95,115 @@ class AddChannelService:
 
             conn.commit()
 
-    # -------------------------------------------------
+    # --- NEW: Channel Update, Description Versioning, and Playlist Archiving ---
+    def update_channel_metadata(self, channel_name: str):
+        old_info = self.get_channel_details(channel_name)
+        if not old_info:
+            return False, "Channel not found in database."
+
+        old_desc = old_info.get("description", "")
+        last_fetch_date = old_info.get("last_fetch_date") or "UnknownDate"
+        channel_url = old_info.get("url")
+
+        if not channel_url:
+            return False, "No URL found for this channel."
+
+        ydl_opts = {
+            'quiet': True,
+            'extract_flat': True,
+            'playlistend': 1,
+            'js_runtimes': {'deno': {'path': None}},
+            'remote_components': ['ejs:github']
+        }
+
+        # 1. Fetch Basic Channel Details
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:  # type: ignore
+                raw_info = ydl.extract_info(channel_url, download=False)
+                # Fixed type hinting warnings by casting to a standard dict
+                new_info: dict = dict(raw_info) if raw_info else {}
+                new_desc = new_info.get("description", "")
+        except DownloadError:
+            with self.get_connection() as conn:
+                conn.execute("UPDATE channels SET is_lost_media = 1 WHERE name = ?", (channel_name,))
+                conn.commit()
+            return False, "Channel is unreachable (Lost Media)."
+
+        cid = old_info.get("channel_id")
+
+        # Determine current handle from yt-dlp to ensure we use the latest one
+        new_handle = new_info.get("uploader_id", old_info.get("handle", ""))
+        safe_handle = new_handle if new_handle.startswith('@') else f"@{new_handle}"
+
+        # Root folder is strictly the immutable Channel ID
+        desc_folder = self.metadata_folder / cid
+
+        # 2. Version the Description if it changed
+        if old_desc and old_desc.strip() != new_desc.strip():
+            desc_folder.mkdir(parents=True, exist_ok=True)
+            safe_date = str(last_fetch_date).replace(":", "-").replace(".", "-")
+
+            # Use the new naming convention!
+            backup_path = desc_folder / f"({safe_handle}) description_{safe_date}.txt"
+            try:
+                with open(backup_path, 'w', encoding='utf-8') as f:
+                    f.write(old_desc)
+            except OSError:
+                pass
+
+        now_str = datetime.now().isoformat()
+
+        # 3. Fetch Playlists
+        playlists_url = channel_url + "/playlists" if not channel_url.endswith("/playlists") else channel_url
+        ydl_opts_pl = {
+            'quiet': True,
+            'extract_flat': True,
+            'js_runtimes': {'deno': {'path': None}},
+            'remote_components': ['ejs:github']
+        }
+
+        extracted_playlists = []
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts_pl) as ydl:  # type: ignore
+                raw_pl = ydl.extract_info(playlists_url, download=False)
+                # Fixed type hinting warnings by casting to a standard dict
+                pl_info: dict = dict(raw_pl) if raw_pl else {}
+                if 'entries' in pl_info:
+                    extracted_playlists = pl_info['entries']
+        except DownloadError:  # Fixed broad exception
+            pass
+
+        # 4. Save to Database
+        with self.get_connection() as conn:
+            conn.execute("""
+                UPDATE channels 
+                SET description = ?, last_fetch_date = ?, handle = ?, is_lost_media = 0
+                WHERE name = ?
+            """, (new_desc, now_str, new_handle, channel_name))
+
+            for pl in extracted_playlists:
+                if not pl: continue
+                pl_id = pl.get('id')
+                pl_title = pl.get('title')
+                pl_url = pl.get('url')
+
+                if not pl_id: continue
+
+                cursor = conn.cursor()
+                cursor.execute("SELECT id FROM playlists WHERE playlist_id = ?", (pl_id,))
+                if cursor.fetchone():
+                    cursor.execute("""
+                        UPDATE playlists SET title = ?, url = ?, last_updated = ? WHERE playlist_id = ?
+                    """, (pl_title, pl_url, now_str, pl_id))
+                else:
+                    cursor.execute("""
+                        INSERT INTO playlists (channel_name, playlist_id, title, url, last_updated)
+                        VALUES (?, ?, ?, ?, ?)
+                    """, (channel_name, pl_id, pl_title, pl_url, now_str))
+
+            conn.commit()
+
+        return True, "Channel metadata and playlists updated successfully."
 
     def fetch_channel_info(self, url, group, progress_callback=None):
         url = url.strip()
@@ -141,6 +247,8 @@ class AddChannelService:
                 description = info.get("description", "")
                 links_json = json.dumps(info.get("links", []))
 
+                now_str = datetime.now().isoformat()
+
                 api_key = self.settings.get_youtube_api_key() if self.settings else ""
                 api_data_full = None
 
@@ -167,7 +275,7 @@ class AddChannelService:
                                 country = snippet.get("country", country)
                                 channel_view_count = int(stats.get("viewCount", channel_view_count))
                                 description = snippet.get("description", description)
-                    except Exception as e:
+                    except URLError as e:  # Fixed broad exception
                         print(f"API Error: {e}")
 
                 info["channel_joined"] = creation_date
@@ -178,21 +286,22 @@ class AddChannelService:
                 with self.get_connection() as conn:
                     cursor = conn.cursor()
 
-                    cursor.execute("SELECT id FROM channels WHERE group_name = ? AND name = ?", (group, channel_name))
+                    cursor.execute("SELECT id FROM channels WHERE group_name = ? AND name = ?",
+                                   (group, channel_name))
                     if cursor.fetchone():
                         cursor.execute("""
-                            UPDATE channels SET handle=?, channel_id=?, url=?, title=?, follower_count=?, description=?, tags=?, thumbnails=?, creation_date=?, country=?, view_count=?, links=?
+                            UPDATE channels SET handle=?, channel_id=?, url=?, title=?, follower_count=?, description=?, tags=?, thumbnails=?, creation_date=?, country=?, view_count=?, links=?, last_fetch_date=?
                             WHERE group_name=? AND name=?
                         """, (handle, channel_id, info.get("uploader_url") or url, info.get("title"),
                               follower_count, description, tags_json, chan_thumbnails_json, creation_date, country,
-                              channel_view_count, links_json, group, channel_name))
+                              channel_view_count, links_json, now_str, group, channel_name))
                     else:
                         cursor.execute("""
-                            INSERT INTO channels (group_name, name, handle, channel_id, url, title, follower_count, description, tags, thumbnails, creation_date, country, view_count, links)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            INSERT INTO channels (group_name, name, handle, channel_id, url, title, follower_count, description, tags, thumbnails, creation_date, country, view_count, links, is_lost_media, last_fetch_date)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
                         """, (group, channel_name, handle, channel_id, info.get("uploader_url") or url,
                               info.get("title"), follower_count, description, tags_json, chan_thumbnails_json,
-                              creation_date, country, channel_view_count, links_json))
+                              creation_date, country, channel_view_count, links_json, now_str))
 
                     def extract_all_videos(data):
                         videos = []
@@ -207,12 +316,11 @@ class AddChannelService:
                     all_videos = extract_all_videos(info)
                     total = len(all_videos)
 
-                    folder_name = f"{channel_id} ({handle})" if handle and handle != "Unknown_Handle" else channel_id
-
-                    channel_metadata_folder = self.metadata_folder / folder_name
+                    # Use strictly channel_id for folder names to prevent breakage on handle changes!
+                    channel_metadata_folder = self.metadata_folder / channel_id
                     channel_metadata_folder.mkdir(parents=True, exist_ok=True)
 
-                    channel_videos_folder = self.videos_folder / folder_name
+                    channel_videos_folder = self.videos_folder / channel_id
                     channel_videos_folder.mkdir(parents=True, exist_ok=True)
 
                     for v_type in ["Videos", "Shorts", "Lives"]:
@@ -235,22 +343,24 @@ class AddChannelService:
                     if banners: banner_url = banners[-1].get("url")
 
                     req_headers = {'User-Agent': 'Mozilla/5.0'}
+
+                    # --- NEW FILE NAMING CONVENTION ---
                     if avatar_url:
                         try:
                             req = urllib.request.Request(avatar_url, headers=req_headers)
                             with urllib.request.urlopen(req) as resp, open(
-                                    channel_metadata_folder / f"profile ({safe_handle}).jpg", 'wb') as f:
+                                    channel_metadata_folder / f"({safe_handle}) profile.jpg", 'wb') as f:
                                 f.write(resp.read())
-                        except Exception:
+                        except (URLError, OSError):  # Fixed broad exception
                             pass
 
                     if banner_url:
                         try:
                             req = urllib.request.Request(banner_url, headers=req_headers)
                             with urllib.request.urlopen(req) as resp, open(
-                                    channel_metadata_folder / f"banner ({safe_handle}).jpg", 'wb') as f:
+                                    channel_metadata_folder / f"({safe_handle}) banner.jpg", 'wb') as f:
                                 f.write(resp.read())
-                        except Exception:
+                        except (URLError, OSError):  # Fixed broad exception
                             pass
 
                     for i, video_entry in enumerate(all_videos):
@@ -293,7 +403,7 @@ class AddChannelService:
                                 break
 
                         is_metadata_downloaded = 1 if (
-                                    meta_subfolder / f"{expected_filename_base}.info.json").exists() else 0
+                                meta_subfolder / f"{expected_filename_base}.info.json").exists() else 0
 
                         cursor.execute("SELECT id FROM videos WHERE video_id = ? AND channel_name = ?",
                                        (video_id, channel_name))
@@ -301,7 +411,8 @@ class AddChannelService:
                             cursor.execute("""
                                 UPDATE videos SET title=?, url=?, view_count=?, video_type=?, upload_date=?, thumbnails=?, filepath=?, is_downloaded=?, is_metadata_downloaded=?
                                 WHERE video_id=? AND channel_name=?
-                            """, (title, url_chk, view_count, v_type, upload_date, thumbnails_json, str(filepath_base),
+                            """, (title, url_chk, view_count, v_type, upload_date, thumbnails_json,
+                                  str(filepath_base),
                                   is_downloaded, is_metadata_downloaded, video_id, channel_name))
                         else:
                             cursor.execute("""
@@ -315,10 +426,8 @@ class AddChannelService:
 
                     conn.commit()
 
-                if handle and handle != "Unknown_Handle":
-                    base_filename = f"{channel_id}_({safe_handle})"
-                else:
-                    base_filename = f"{channel_id}"
+                # --- NEW FILE NAMING CONVENTION FOR JSON ---
+                base_filename = f"({safe_handle})_{channel_id}"
 
                 ytdlp_save_path = channel_metadata_folder / f"{base_filename}.json"
                 with open(ytdlp_save_path, "w", encoding="utf-8") as f:
@@ -341,6 +450,7 @@ class AddChannelService:
                 return False, f"DATABASE ERROR:\nFailed to save data to the library.\n\nDetails: {db_err}"
 
             except Exception as err:
+                # Top level fallback is kept as Exception because we want to catch literally any system failure here
                 full_traceback = traceback.format_exc()
                 error_type = type(err).__name__
                 print(f"UNEXPECTED ERROR [{error_type}]: {err}\n{full_traceback}")

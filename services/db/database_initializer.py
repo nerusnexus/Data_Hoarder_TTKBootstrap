@@ -29,6 +29,8 @@ def initialize_database():
             country TEXT,
             view_count INTEGER,
             links TEXT,
+            is_lost_media INTEGER DEFAULT 2,
+            last_fetch_date TEXT DEFAULT NULL,
             FOREIGN KEY(group_name) REFERENCES groups(name) ON DELETE CASCADE
         )
     """)
@@ -55,6 +57,18 @@ def initialize_database():
             thumb_filepath TEXT,
             is_lost_media INTEGER DEFAULT NULL,
             last_metadata_fetch_date TEXT DEFAULT NULL,
+            FOREIGN KEY(channel_name) REFERENCES channels(name) ON DELETE CASCADE
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS playlists (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            channel_name TEXT NOT NULL,
+            playlist_id TEXT UNIQUE NOT NULL,
+            title TEXT,
+            url TEXT,
+            last_updated TEXT,
             FOREIGN KEY(channel_name) REFERENCES channels(name) ON DELETE CASCADE
         )
     """)
