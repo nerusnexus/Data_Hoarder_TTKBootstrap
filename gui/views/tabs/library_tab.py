@@ -4,12 +4,12 @@ from ttkbootstrap.widgets.scrolled import ScrolledFrame
 from ttkbootstrap.dialogs import Messagebox
 from pathlib import Path
 from PIL import Image, ImageTk
-import webbrowser
 import os
 import sys
 import subprocess
 import threading
 from config import METADATA_DIR, FONTS_DIR
+from gui.components.video_card import VideoCard
 
 
 class LibraryTab(ttk.Frame):
@@ -22,6 +22,9 @@ class LibraryTab(ttk.Frame):
         self.notebook = None
         self.tab_frames = {}
         self._search_timer = None
+        self.check_progress_var = None
+        self.check_progress = None
+        self.check_status_btn = None
 
         self.current_videos = []
         self.search_var = ttk.StringVar()
@@ -39,7 +42,6 @@ class LibraryTab(ttk.Frame):
 
         self.build_ui()
         self.load_tree_data()
-
         self.winfo_toplevel().bind("<<DataUpdated>>", self.refresh_tree, add="+")
 
     def build_ui(self):
@@ -139,7 +141,7 @@ class LibraryTab(ttk.Frame):
     def on_search_typing(self, _event=None):
         if self._search_timer is not None:
             self.after_cancel(self._search_timer)
-        self._search_timer = self.after(1000, lambda: self.apply_filters_and_render())
+        self._search_timer = self.after(1000, lambda: self.apply_filters_and_render()) # type: ignore
 
     def on_sort_changed(self, _event=None):
         if self.current_videos:
@@ -171,127 +173,16 @@ class LibraryTab(ttk.Frame):
             v_type = video.get("video_type", "Videos")
             if v_type not in self.tab_frames: v_type = "Videos"
             row, col = divmod(counters[v_type], 3)
-            self.create_video_card(self.tab_frames[v_type], video, self.current_thumb_dir, row, col)
+
+            # Use the new Component!
+            card = VideoCard(self.tab_frames[v_type], video, self.current_thumb_dir, self.has_icon_font,
+                             self.image_queue, self.play_video, self.reveal_file)
+            card.grid(row=row, column=col, padx=10, pady=10, sticky="nsew")
+
             counters[v_type] += 1
 
         if not self.is_loading_images:
             self.process_image_queue()
-
-    def create_video_card(self, parent, video, thumb_dir, row, col):
-        border_frame = ttk.Frame(parent, bootstyle="light")
-        border_frame.grid(row=row, column=col, padx=10, pady=10, sticky="nsew")
-
-        card = ttk.Frame(border_frame, padding=10, bootstyle="dark")
-        card.pack(fill=BOTH, expand=True, padx=1, pady=1)
-
-        thumb_path = None
-        db_thumb = video.get("thumb_filepath")
-        filepath_str = video.get("filepath")
-
-        candidates = []
-        if db_thumb:
-            candidates.append(Path(db_thumb))
-            candidates.append(Path(db_thumb).with_suffix('.jpg'))
-
-        if filepath_str:
-            candidates.append(Path(f"{filepath_str}.webp"))
-            candidates.append(Path(f"{filepath_str}.jpg"))
-
-        candidates.append(thumb_dir / f"{video['video_id']}.webp")
-        candidates.append(thumb_dir / f"{video['video_id']}.jpg")
-
-        for cand in candidates:
-            if cand.exists():
-                thumb_path = cand
-                break
-
-        img_label = ttk.Label(card, text="[No Thumbnail]", bootstyle="inverse-secondary", anchor=CENTER)
-        img_label.pack(side=TOP, fill=X)
-
-        if thumb_path:
-            img_label.config(text="[Loading...]")
-            self.image_queue.append((img_label, thumb_path))
-
-        title_text = video.get("title", "Unknown Title")
-        ttk.Label(card, text=title_text, font=("Segoe UI", 9, "bold"), wraplength=280, justify=LEFT).pack(side=TOP,
-                                                                                                          anchor=NW,
-                                                                                                          pady=(8, 5),
-                                                                                                          fill=X)
-
-        info_row = ttk.Frame(card, bootstyle="dark")
-        info_row.pack(side=TOP, fill=X, pady=(5, 0))
-
-        views = video.get("view_count") or 0
-        date_str = video.get("upload_date", "")
-        date_formatted = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}" if date_str and len(
-            date_str) == 8 else "Unknown Date"
-
-        ttk.Label(info_row, text=f"{views:,} views • {date_formatted}", font=("Segoe UI", 8), bootstyle="light").pack(
-            side=LEFT)
-
-        status_label = ttk.Label(info_row)
-        status_label.pack(side=RIGHT)
-
-        online_status_label = ttk.Label(info_row)
-        online_status_label.pack(side=RIGHT, padx=(0, 5))
-
-        if self.has_icon_font:
-            status_label.config(font=("Material Symbols Rounded", 16))
-            online_status_label.config(font=("Material Symbols Rounded", 16))
-
-            if video.get("is_downloaded"):
-                status_label.config(text="data_check", bootstyle="success")
-            elif video.get("is_metadata_downloaded"):
-                status_label.config(text="data_info_alert", bootstyle="warning")
-            else:
-                status_label.config(text="captive_portal", bootstyle="info")
-
-            is_lost = video.get("is_lost_media")
-            # --- UPDATED: Unchecked / Warning state ---
-            if is_lost == 1:
-                online_status_label.config(text="cloud_alert", bootstyle="danger")
-            elif is_lost == 0:
-                online_status_label.config(text="cloud_done", bootstyle="success")
-            else:
-                online_status_label.config(text="cloud_sync", bootstyle="warning")
-            # ------------------------------------------
-        else:
-            is_lost = video.get("is_lost_media")
-            if is_lost == 1:
-                online_status_label.config(text="[Lost]", bootstyle="danger")
-            elif is_lost == 0:
-                online_status_label.config(text="[Online]", bootstyle="success")
-            else:
-                online_status_label.config(text="[Unchecked]", bootstyle="warning")
-
-        btn_row = ttk.Frame(card, bootstyle="dark")
-        btn_row.pack(side=TOP, fill=X, pady=(10, 0))
-
-        if self.has_icon_font:
-            ttk.Button(btn_row, text="public", style="Icon.info.Outline.TButton",
-                       command=lambda u=video.get("url"): webbrowser.open(u) if u else None
-                       ).pack(side=LEFT, padx=(0, 5))
-
-            ttk.Button(btn_row, text="folder", style="Icon.warning.Outline.TButton",
-                       command=lambda p=filepath_str: self.reveal_file(p)
-                       ).pack(side=LEFT, padx=5)
-
-            ttk.Button(btn_row, text="play_arrow", style="Icon.success.Outline.TButton",
-                       command=lambda p=filepath_str: self.play_video(p)
-                       ).pack(side=LEFT, padx=5)
-
-        else:
-            ttk.Button(btn_row, text="Browser", bootstyle="info-outline",
-                       command=lambda u=video.get("url"): webbrowser.open(u) if u else None
-                       ).pack(side=LEFT, padx=(0, 5))
-
-            ttk.Button(btn_row, text="Folder", bootstyle="warning-outline",
-                       command=lambda p=filepath_str: self.reveal_file(p)
-                       ).pack(side=LEFT, padx=5)
-
-            ttk.Button(btn_row, text="Play", bootstyle="success-outline",
-                       command=lambda p=filepath_str: self.play_video(p)
-                       ).pack(side=LEFT, padx=5)
 
     def start_online_check(self):
         if not self.current_videos:
@@ -309,8 +200,7 @@ class LibraryTab(ttk.Frame):
             self.winfo_toplevel().after(0, self.check_progress_var.set, pct)
 
         self.add_channel_service.check_videos_online_status(self.current_videos, progress_callback=update_progress)
-
-        self.winfo_toplevel().after(0, self._finish_online_check)
+        self.winfo_toplevel().after(0, self._finish_online_check) # type: ignore
 
     def _finish_online_check(self):
         self.check_progress.pack_forget()
@@ -394,7 +284,7 @@ class LibraryTab(ttk.Frame):
                 photo = ImageTk.PhotoImage(img)
                 label.config(image=photo, text="")
                 label.image = photo
-        except Exception as e:
+        except OSError:  # Fixed broad exception and unused 'e'
             pass
 
-        self.after(5, self.process_image_queue)
+        self.after(5, self.process_image_queue)  # type: ignore
