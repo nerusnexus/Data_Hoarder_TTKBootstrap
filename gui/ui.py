@@ -6,7 +6,7 @@ from gui.views.dashboard_view import DashboardView
 from gui.views.ytdlp_view import YtDlpView
 from gui.views.settings_view import SettingsView
 from gui.views.database_view import DatabaseView
-
+from gui.views.instaloader_view import InstaloaderView
 
 class MainUI:
     def __init__(self, root, services):
@@ -50,26 +50,18 @@ class MainUI:
             self.sidebar, text="Dashboard", bootstyle="outline", command=lambda: self.show_view("dashboard")
         ).pack(fill="x", padx=5, pady=5)
 
-        # --- NEW: Image handling for yt-dlp button ---
         try:
             img_path = Path("assets/_dlp.png")
-
-            # Load the original image
             img = Image.open(img_path)
-
-            # Increase the size to ~36x36 or 40x40. The button will expand to fit it.
             img.thumbnail((70, 70), Image.Resampling.LANCZOS)
-
             self.icons["dlp"] = ImageTk.PhotoImage(img)
-
             ttk.Button(
                 self.sidebar,
                 image=self.icons["dlp"],
-                bootstyle="outline",  # <--- Changes it to an outline button
+                bootstyle="outline",
                 padding=(0, 2),  # <--- Shrinks the internal vertical padding to maximize the image
                 command=lambda: self.show_view("ytdlp")
             ).pack(fill="x", padx=5, pady=5)
-
         except Exception as e:
             print(f"Could not load _dlp.png: {e}")
             # Fallback to standard text button if image is missing
@@ -79,6 +71,16 @@ class MainUI:
                 bootstyle="outline",  # Keep the outline style on the fallback too!
                 command=lambda: self.show_view("ytdlp")
             ).pack(fill="x", padx=5, pady=5)
+
+        try:
+            ig_img = Image.open(Path("assets/instaloader.png"))
+            ig_img.thumbnail((30, 30), Image.Resampling.LANCZOS)
+            self.icons["insta"] = ImageTk.PhotoImage(ig_img)
+            ttk.Button(self.sidebar, image=self.icons["insta"], bootstyle="outline", padding=(0, 2),
+                       command=lambda: self.show_view("insta")).pack(fill="x", padx=5, pady=5)
+        except Exception:
+            ttk.Button(self.sidebar, text="Insta", bootstyle="warning-outline",
+                       command=lambda: self.show_view("insta")).pack(fill="x", padx=5, pady=5)
         # ----------------------------------------------
 
         ttk.Button(
@@ -99,6 +101,7 @@ class MainUI:
         self.views["dashboard"] = DashboardView(self.content, self.services)
         self.views["ytdlp"] = YtDlpView(self.content, self.services)
         self.views["db"] = DatabaseView(self.content, self.services)
+        self.views["insta"] = InstaloaderView(self.content, self.services)
 
         # --- DECOUPLED SETTINGS VIEW ---
         self.views["settings"] = SettingsView(

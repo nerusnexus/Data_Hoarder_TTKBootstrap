@@ -73,5 +73,36 @@ def initialize_database():
         )
     """)
 
+    # --- NEW: INSTAGRAM TABLES (Strictly Separate) ---
+    cursor.execute("""
+            CREATE TABLE IF NOT EXISTS ig_accounts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                full_name TEXT,
+                user_id TEXT,
+                biography TEXT,
+                followers INTEGER,
+                following INTEGER,
+                profile_pic_path TEXT,
+                is_private INTEGER,
+                last_sync_date TEXT
+            )
+        """)
+
+    cursor.execute("""
+            CREATE TABLE IF NOT EXISTS ig_posts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id INTEGER NOT NULL,
+                shortcode TEXT UNIQUE NOT NULL,
+                type TEXT,
+                text TEXT,
+                timestamp TEXT,
+                likes INTEGER,
+                comments INTEGER,
+                is_downloaded INTEGER DEFAULT 0,
+                FOREIGN KEY(account_id) REFERENCES ig_accounts(id) ON DELETE CASCADE
+            )
+        """)
+
     conn.commit()
     conn.close()

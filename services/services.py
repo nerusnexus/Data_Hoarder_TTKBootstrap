@@ -6,7 +6,7 @@ from services.subservices.addchannel_service import AddChannelService
 from services.subservices.fetchmetadata_service import FetchMetadataService
 from services.db.database_initializer import initialize_database
 from services.subservices.dlp_download_service import DlpDownloadService
-
+from services.subservices.insta_service import InstaService
 
 class AppServices:
     def __init__(self, style):
@@ -23,6 +23,8 @@ class AppServices:
         self.add_channel_service = AddChannelService(self.ytdlp, self.settings)
         self.fetch_metadata = FetchMetadataService()
         self.dlp_download_service = DlpDownloadService()
+
+        self.insta = InstaService()
 
     def get_available_themes(self):
         return self.style.theme_names()

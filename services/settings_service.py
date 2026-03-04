@@ -17,7 +17,9 @@ class SettingsService:
             "start_with_system": False,
             "youtube_api_key": "",
             "quota_date": "",
-            "quota_used": 0
+            "quota_used": 0,
+            "ig_username": "",  # NEW
+            "ig_password": ""   # NEW
         }
         self.settings = self.load_settings()
 
@@ -76,12 +78,26 @@ class SettingsService:
         self.settings["youtube_api_key"] = key
         self.save_settings(self.settings)
 
-    # --- NEW: Quota Tracking Methods ---
+    # --- NEW: Instagram Credentials ---
+    def get_ig_username(self):
+        return self.settings.get("ig_username", "")
+
+    def set_ig_username(self, username):
+        self.settings["ig_username"] = username
+        self.save_settings(self.settings)
+
+    def get_ig_password(self):
+        return self.settings.get("ig_password", "")
+
+    def set_ig_password(self, password):
+        self.settings["ig_password"] = password
+        self.save_settings(self.settings)
+
+    # --- Quota Tracking Methods ---
     def get_remaining_quota(self):
         today = datetime.date.today().isoformat()
         saved_date = self.settings.get("quota_date", "")
 
-        # If it's a new day, reset the counter
         if saved_date != today:
             self.settings["quota_date"] = today
             self.settings["quota_used"] = 0
